@@ -123,7 +123,7 @@ async function callGemini(prompt, systemInstruction = "") {
 
     // CHANGED: Use gemini-1.5-flash (faster, cheaper, supports system instructions better)
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       systemInstruction: systemInstruction,
       // ADDED: Force JSON output to prevent parsing errors
       generationConfig: { responseMimeType: "application/json" }
@@ -147,7 +147,7 @@ async function callGemini(prompt, systemInstruction = "") {
       return { status: "ERROR", reasoning: "The Oracle spoke in riddles (Invalid JSON returned)." };
     }
 
-    return { status: "ERROR", reasoning: "The Oracle is currently unreachable. Try again later." };
+    return { status: "ERROR", reasoning: `The Oracle is currently unreachable. (${e.message})` };
   }
 }
 
