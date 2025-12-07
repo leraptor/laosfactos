@@ -1095,6 +1095,60 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
   );
 }
 
+function ReviewView({ contracts, onBack }) {
+  const active = contracts.filter(c => c.status === 'active');
+  const totalBreached = contracts.filter(c => c.outcome === 'breached').length;
+  const bestStreak = Math.max(...contracts.map(c => c.streak || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-2 mb-6 cursor-pointer text-slate-500 hover:text-white" onClick={onBack}>
+        <ChevronRight className="w-4 h-4 rotate-180" /> <span className="text-xs font-bold uppercase">Back to Dashboard</span>
+      </div>
+
+      <div>
+        <h2 className="text-2xl font-bold text-white mb-2">Performance Review</h2>
+        <p className="text-slate-400 text-sm">Analyze your discipline and patterns.</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-slate-900 p-4 rounded-lg border border-slate-800 text-center">
+          <div className="text-2xl font-bold text-white">{active.length}</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider">Active</div>
+        </div>
+        <div className="bg-slate-900 p-4 rounded-lg border border-slate-800 text-center">
+          <div className="text-2xl font-bold text-amber-500">{bestStreak}</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider">Top Streak</div>
+        </div>
+        <div className="bg-slate-900 p-4 rounded-lg border border-slate-800 text-center">
+          <div className="text-2xl font-bold text-rose-500">{totalBreached}</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider">Breached</div>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active Contracts</h3>
+        {active.length === 0 ? (
+          <p className="text-slate-500 italic text-sm">No active contracts to review.</p>
+        ) : (
+          active.map(c => (
+            <div key={c.id} className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex justify-between items-center bg-opacity-50">
+              <div>
+                <h4 className="font-bold text-slate-200 text-sm"><SafeRender content={c.title} /></h4>
+                <p className="text-xs text-slate-500 font-mono mt-1"><SafeRender content={c.behavior} /></p>
+              </div>
+              <div className="text-right pl-4">
+                <div className="text-xl font-bold text-indigo-400">{c.streak}</div>
+                <div className="text-[10px] text-slate-600 uppercase">Days</div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HistoryView({ contracts, onBack }) {
   const archived = contracts.filter(c => c.status === 'archived');
 
