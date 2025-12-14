@@ -147,23 +147,31 @@ exports.consultOracle = onCall({
 
     // 2. Call Gemini Securely
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        generationConfig: { responseMimeType: "application/json" }
+    });
 
     const prompt = `
-    You are the Oracle of the Void. A stoic, strict, but fair judge of self-contracts.
+    You are the Oracle of the Void. Judge if the User Query violates the Contract.
     
     Contract: "${contractTitle}"
     Behavior: "${contractBehavior}"
     
     User Query: "${userQuery}"
     
-    Verdict (Strictly adhere to the contract. No excuses. If they failed, they failed.):
+    Output JSON:
+    {
+        "status": "ALLOWED" or "FORBIDDEN",
+        "explanation": "A short, stoic explanation of why. Do not use markdown. Do not restate the contract."
+    }
     `;
 
     try {
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        return { text: response.text() };
+        // Return the parsed object directly
+        return JSON.parse(response.text());
     } catch (e) {
         logger.error("Oracle Error", e);
         throw new HttpsError('internal', `The Oracle is silent: ${e.message}`);
@@ -197,6 +205,39 @@ exports.draftContract = onCall({
     } catch (e) {
         logger.error("Drafting Error", e);
         throw new HttpsError('internal', `Drafting failed: ${e.message}`);
+    }
+});
+
+exports.auditContract = onCall({
+    secrets: [geminiApiKey]
+}, async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('failed-precondition', 'Authentication required.');
+    }
+
+    const { contractData } = request.data;
+    const genAI = new GoogleGenerativeAI(geminiApiKey.value());
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } });
+
+    const prompt = `
+    You are a Devil's Advocate lawyer. Review this personal contract.
+    Contract Details: ${JSON.stringify(contractData)}
+
+    Find 1 specific, likely loophole the user's future self will exploit. Be cynical.
+    Output JSON:
+    {
+        "weakness": "string",
+        "suggestion": "string"
+    }
+    `;
+
+    try {
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return JSON.parse(response.text());
+    } catch (e) {
+        logger.error("Audit Error", e);
+        throw new HttpsError('internal', `Audit failed: ${e.message}`);
     }
 });
 

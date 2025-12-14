@@ -124,35 +124,25 @@ async function callAIJudge(data) {
     contractBehavior: data.contractBehavior
   });
 
-  // Heuristic adapter since backend returns raw text
-  const text = result.data.text || "";
-  const lower = text.toLowerCase();
-  // Assume allowed unless it mentions failure/violation/forbidden
-  const isForbidden = lower.includes("fail") || lower.includes("violation") || lower.includes("forbidden") || lower.includes("no") || lower.includes("guilty");
+  const { status, explanation } = result.data;
 
   return {
-    isAllowed: !isForbidden,
-    explanation: text
+    isAllowed: status === "ALLOWED",
+    explanation: explanation
   };
 }
 
 // Missing function definition
-async function callAIBackend(instruction, systemPrompt) {
-  // Reuse draftContract as a generic text-in/json-out endpoint if possible, 
-  // or consultOracle for text-in/text-out.
-  // Given usage (Audit/Analysis), we want JSON. 
-  // draftContract takes 'userGoal' and returns JSON. Let's hijack it or use judgeViolation.
-
-  // Actually, let's use judgeViolation but pass our prompt as the "story".
-  const judgeViolation = httpsCallable(functions, 'judgeViolation');
-  const result = await judgeViolation({
-    reason: "AUDIT_REQUEST",
-    story: systemPrompt, // Passing the full prompt as the story
-    decision: "PENDING",
-    contractTitle: "SYSTEM_AUDIT",
-    contractBehavior: "STRICT_ANALYSIS"
-  });
-  return result.data;
+async function callAIAudit(contractData) {
+  try {
+    const auditContract = httpsCallable(functions, 'auditContract');
+    const result = await auditContract({ contractData });
+    return result.data;
+  } catch (e) {
+    console.error("AI Audit Error:", e);
+    // Return a fallback or throw suitable error
+    return { weakness: "The Void cannot see details right now.", suggestion: "Proceed with caution." };
+  }
 }
 
 async function callAIDrafting(userGoal) {
@@ -1464,6 +1454,7 @@ function CreateContract({ onCancel, onSubmit }) {
     if (!aiPrompt.trim()) return;
     setIsAiLoading(true);
 
+    const result = await callAIDrafting(aiPrompt);
 
     if (result) {
       setFormData(prev => ({
@@ -1483,12 +1474,7 @@ function CreateContract({ onCancel, onSubmit }) {
 
   const handlePreMortemAudit = async () => {
     setIsAuditing(true);
-    const systemPrompt = "You are a Devil's Advocate lawyer. Review this personal contract.\n" +
-      "Contract Details: " + JSON.stringify(formData) + "\n\n" +
-      "Find 1 specific, likely loophole the user's future self will exploit. Be cynical.\n" +
-      "Return JSON: { \"weakness\": \"string\", \"suggestion\": \"string\" }";
-
-    const result = await callAIBackend("Audit this contract.", systemPrompt);
+    const result = await callAIAudit(formData);
     if (result) {
       setAuditResult(result);
     }
