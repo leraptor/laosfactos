@@ -7,7 +7,7 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth';
 import { getMessaging, getToken } from 'firebase/messaging';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   getFirestore,
   collection,
@@ -115,45 +115,26 @@ const formatDate = (val) => {
   }
 };
 
-// --- Gemini AI Setup ---
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-
-async function callGemini(prompt, systemInstruction = "") {
-  if (!GEMINI_API_KEY) {
-    console.error("Missing VITE_GEMINI_API_KEY in .env");
-    return { status: "ERROR", reasoning: "System Error: Gemini API Key is missing. Please check .env config." };
-  }
-
+// --- AI Helper (Backend) ---
+async function callAIJudge(data) {
   try {
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-
-    // CHANGED: Use gemini-1.5-flash (faster, cheaper, supports system instructions better)
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      systemInstruction: systemInstruction,
-      // ADDED: Force JSON output to prevent parsing errors
-      generationConfig: { responseMimeType: "application/json" }
-    });
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    // With JSON mode enabled, we rarely need regex cleanup, but it's safe to keep simple trimming
-    const cleanText = text.trim();
-
-    return JSON.parse(cleanText);
-
+    const judgeViolation = httpsCallable(functions, 'judgeViolation');
+    const result = await judgeViolation(data);
+    return result.data;
   } catch (e) {
-    // Log the actual error to the console so you can debug API key/quota issues
-    console.error("Gemini SDK Error Detailed:", e);
+    console.error("AI Judge Error:", e);
+    return { verdict: "ERROR", reasoning: "The Void is silent." };
+  }
+}
 
-    // Check if it was a parsing error vs a network error
-    if (e instanceof SyntaxError) {
-      return { status: "ERROR", reasoning: "The Oracle spoke in riddles (Invalid JSON returned)." };
-    }
-
-    return { status: "ERROR", reasoning: `The Oracle is currently unreachable. (${e.message})` };
+async function callAIDrafting(userGoal) {
+  try {
+    const draftContract = httpsCallable(functions, 'draftContract');
+    const result = await draftContract({ userGoal });
+    return result.data;
+  } catch (e) {
+    console.error("AI Draft Error:", e);
+    return { title: "Error", behavior: "The Void could not draft this contract." };
   }
 }
 
@@ -180,6 +161,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const messaging = getMessaging(app);
+const functions = getFunctions(app);
 
 // --- Constants ---
 const MAX_ACTIVE_CONTRACTS = 10;
@@ -474,21 +456,13 @@ function OracleModal({ contract, onClose }) {
     - Title: "${contract.title}"
     - Core Behavior: "${contract.behavior}"
     - Exceptions: ${JSON.stringify(contract.exceptions)}
+    const result = await callAIJudge({
+      situation: query,
+      contractTitle: contract.title,
+      contractBehavior: contract.behavior,
+      contractExceptions: contract.exceptions
+    });
     
-    User Situation: "${query}"
-    
-    Your Task:
-    1. Determine if this specific situation is a VIOLATION or ALLOWED based ONLY on the text above.
-    2. Be literal and strict. If it's a loophole not explicitly forbidden, it might be allowed, but warn them.
-    3. If it is an exception listed, it is ALLOWED.
-    
-    Return JSON only:
-    {
-      "status": "ALLOWED" | "VIOLATION",
-      "reasoning": "Short, stern explanation of why."
-    }`;
-
-    const result = await callGemini("Judge this situation.", systemPrompt);
     if (result) setVerdict(result);
     setIsLoading(false);
   };
@@ -527,8 +501,8 @@ function OracleModal({ contract, onClose }) {
         )}
 
         {verdict && (
-          <div className={`p-4 rounded border-l-4 animate-in fade-in ${verdict.status === 'ALLOWED' ? 'bg-emerald-950/30 border-emerald-500' : 'bg-rose-950/30 border-rose-500'}`}>
-            <div className={`text-xl font-black uppercase tracking-widest mb-2 ${verdict.status === 'ALLOWED' ? 'text-emerald-400' : 'text-rose-500'}`}>
+          <div className={`p-4 rounded border - l - 4 animate -in fade -in ${ verdict.status === 'ALLOWED' ? 'bg-emerald-950/30 border-emerald-500' : 'bg-rose-950/30 border-rose-500' } `}>
+            <div className={`text - xl font - black uppercase tracking - widest mb - 2 ${ verdict.status === 'ALLOWED' ? 'text-emerald-400' : 'text-rose-500' } `}>
               <SafeRender content={verdict.status} />
             </div>
             <p className="text-slate-300 text-sm font-mono leading-relaxed">
@@ -821,14 +795,14 @@ export default function Laosfactos() {
                 </button>
                 <button
                   onClick={() => setView('history')}
-                  className={`p-2 rounded-full transition-colors ${view === 'history' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-900'}`}
+                  className={`p - 2 rounded - full transition - colors ${ view === 'history' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-900' } `}
                   title="The Ledger"
                 >
                   <Archive className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => setView('review')}
-                  className={`p-2 rounded-full transition-colors ${view === 'review' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-900'}`}
+                  className={`p - 2 rounded - full transition - colors ${ view === 'review' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-900' } `}
                   title="Review Contracts"
                 >
                   <Activity className="w-5 h-5" />
@@ -1010,7 +984,7 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
         <div className="flex justify-between items-end">
           <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
             Today's Contracts
-            <span className={`px-1.5 py-0.5 rounded text-[10px] ${isFull ? 'bg-amber-900/40 text-amber-500' : 'bg-slate-800 text-slate-400'}`}>
+            <span className={`px - 1.5 py - 0.5 rounded text - [10px] ${ isFull ? 'bg-amber-900/40 text-amber-500' : 'bg-slate-800 text-slate-400' } `}>
               {slotsUsed}/{MAX_ACTIVE_CONTRACTS}
             </span>
           </h2>
@@ -1094,19 +1068,19 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
   const isExpired = daysLeft !== null && daysLeft < 0;
 
   return (
-    <div className={`relative group transition-all duration-300 ${isDone ? 'opacity-60' : 'opacity-100'}`}>
+    <div className={`relative group transition - all duration - 300 ${ isDone ? 'opacity-60' : 'opacity-100' } `}>
       <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 flex flex-col gap-4 shadow-sm hover:border-slate-700">
 
         {/* Header */}
         <div className="flex justify-between items-start gap-4">
           <div className="space-y-1 min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <PillarIcon className={`w-3 h-3 ${pillar.color} flex-shrink-0`} />
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${pillar.color}`}>{pillar.label}</span>
+              <PillarIcon className={`w - 3 h - 3 ${ pillar.color } flex - shrink - 0`} />
+              <span className={`text - [10px] font - bold uppercase tracking - wider ${ pillar.color } `}>{pillar.label}</span>
               {daysLeft !== null && !isFuture && (
-                <span className={`text-[10px] font-bold uppercase tracking-wider ${daysLeft < 3 ? 'text-rose-500' : 'text-slate-500'} ml-2 flex items-center gap-1`}>
+                <span className={`text - [10px] font - bold uppercase tracking - wider ${ daysLeft < 3 ? 'text-rose-500' : 'text-slate-500' } ml - 2 flex items - center gap - 1`}>
                   <Clock className="w-3 h-3" />
-                  {isExpired ? 'Completed' : `${daysLeft}d left`}
+                  {isExpired ? 'Completed' : `${ daysLeft }d left`}
                 </span>
               )}
             </div>
@@ -1205,7 +1179,7 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
               <Trophy className="w-4 h-4" /> Claim Victory & Archive
             </button>
           ) : isDone ? (
-            <div className={`w-full py-2 rounded flex items-center justify-center gap-2 font-bold text-sm ${isKept ? 'bg-emerald-950/30 text-emerald-500 border border-emerald-900/50' : isBroken ? 'bg-rose-950/30 text-rose-500 border border-rose-900/50' : 'bg-slate-800 text-slate-400'}`}>
+            <div className={`w - full py - 2 rounded flex items - center justify - center gap - 2 font - bold text - sm ${ isKept ? 'bg-emerald-950/30 text-emerald-500 border border-emerald-900/50' : isBroken ? 'bg-rose-950/30 text-rose-500 border border-rose-900/50' : 'bg-slate-800 text-slate-400' } `}>
               {isKept && <><CheckCircle2 className="w-4 h-4" /> CONTRACT KEPT</>}
               {isBroken && <><AlertTriangle className="w-4 h-4" /> VIOLATION LOGGED</>}
               {todayLog?.status === 'exception' && <><PauseCircle className="w-4 h-4" /> EXCEPTION DAY</>}
@@ -1320,7 +1294,7 @@ function HistoryView({ contracts, onBack, onOpenJournal }) {
             return (
               <div
                 key={c.id}
-                className={`relative p-5 rounded-lg border ${isCompleted ? 'gold-frame' : isBreached ? 'bg-slate-900 border-rose-900/30' : 'bg-slate-900 border-slate-800'}`}
+                className={`relative p - 5 rounded - lg border ${ isCompleted ? 'gold-frame' : isBreached ? 'bg-slate-900 border-rose-900/30' : 'bg-slate-900 border-slate-800' } `}
               >
                 {/* Visual Stamp Overlay for Breached */}
                 {isBreached && (
@@ -1329,7 +1303,7 @@ function HistoryView({ contracts, onBack, onOpenJournal }) {
 
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className={`font-bold text-lg ${isCompleted ? 'text-amber-400' : 'text-slate-300'}`}><SafeRender content={c.title} /></h3>
+                    <h3 className={`font - bold text - lg ${ isCompleted ? 'text-amber-400' : 'text-slate-300' } `}><SafeRender content={c.title} /></h3>
                     <div className="text-xs text-slate-500 font-mono mt-1">
                       Final Streak: {c.streak} days
                     </div>
@@ -1433,25 +1407,11 @@ function CreateContract({ onCancel, onSubmit }) {
 
   const update = (field, val) => setFormData(p => ({ ...p, [field]: val }));
 
-  // --- Features ---
-
+  /* --- AI Drafting Logic --- */
   const handleAiDraft = async () => {
     if (!aiPrompt.trim()) return;
     setIsAiLoading(true);
 
-    const systemPrompt = `You are a strict, stoic accountability partner API. 
-    Convert user intent into a JSON object for a serious behavioral contract.
-    Fields:
-    - title: Short, punchy (e.g. "No Sugar Protocol")
-    - pillar: ONE of [longevity, wealth, contribution, inner_world, execution]
-    - type: "DO" or "AVOID"
-    - behavior: Specific rule (e.g. "No refined sugar. Fruit is allowed.")
-    - penalty: Creative social/monetary penalty (e.g. "Donate $50 to a charity I dislike")
-    - exceptions: Array of strings (max 2 common exceptions like "Travel", "Sick day")
-    
-    Return ONLY raw JSON.`;
-
-    const result = await callGemini(aiPrompt, systemPrompt);
 
     if (result) {
       setFormData(prev => ({
@@ -1472,10 +1432,10 @@ function CreateContract({ onCancel, onSubmit }) {
   const handlePreMortemAudit = async () => {
     setIsAuditing(true);
     const systemPrompt = `You are a Devil's Advocate lawyer. Review this personal contract.
-    Contract Details: ${JSON.stringify(formData)}
+    Contract Details: ${ JSON.stringify(formData) }
     
     Find 1 specific, likely loophole the user's future self will exploit. Be cynical.
-    Return JSON: { "weakness": "string", "suggestion": "string" }`;
+    Return JSON: { "weakness": "string", "suggestion": "string" } `;
 
     const result = await callGemini("Audit this contract.", systemPrompt);
     if (result) {

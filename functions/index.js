@@ -1,3 +1,4 @@
+const { onCall } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
@@ -131,4 +132,109 @@ async function processUser(userDoc, model) {
     } catch (e) {
         logger.error(`Error processing user ${uid}`, e);
     }
+
 }
+
+exports.consultOracle = onCall({
+    secrets: [geminiApiKey]
+}, async (request) => {
+    // 1. Validate Auth
+    if (!request.auth) {
+        throw new functions.https.HttpsError('failed-precondition', 'The function must be called while authenticated.');
+    }
+
+    const { contractTitle, contractBehavior, userQuery } = request.data;
+
+    // 2. Call Gemini Securely
+    const genAI = new GoogleGenerativeAI(geminiApiKey.value());
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const prompt = `
+    You are the Oracle of the Void. A stoic, strict, but fair judge of self-contracts.
+    
+    Contract: "${contractTitle}"
+    Behavior: "${contractBehavior}"
+    
+    User Query: "${userQuery}"
+    
+    Verdict (Strictly adhere to the contract. No excuses. If they failed, they failed.):
+    `;
+
+    try {
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return { text: response.text() };
+    } catch (e) {
+        logger.error("Oracle Error", e);
+        throw new functions.https.HttpsError('internal', 'The Oracle is silent.');
+    }
+});
+
+
+exports.draftContract = onCall({
+    secrets: [geminiApiKey]
+}, async (request) => {
+    if (!request.auth) {
+        throw new functions.https.HttpsError('failed-precondition', 'Authentication required.');
+    }
+
+    const { userGoal } = request.data;
+    const genAI = new GoogleGenerativeAI(geminiApiKey.value());
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", generationConfig: { responseMimeType: "application/json" } });
+
+    const prompt = `
+    You are a Stoic Contract Lawyer.
+    User Goal: "${userGoal}"
+    
+    Task: Draft a strict self-contract.
+    Output JSON with keys: "title" (short, punchy, Latin or English) and "behavior" (specific, measurable rule).
+    `;
+
+    try {
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return JSON.parse(response.text());
+    } catch (e) {
+        logger.error("Drafting Error", e);
+        throw new functions.https.HttpsError('internal', 'Drafting failed.');
+    }
+});
+
+exports.judgeViolation = onCall({
+    secrets: [geminiApiKey]
+}, async (request) => {
+    if (!request.auth) {
+        throw new functions.https.HttpsError('failed-precondition', 'Authentication required.');
+    }
+
+    const { reason, story, decision, contractTitle, contractBehavior } = request.data;
+    const genAI = new GoogleGenerativeAI(geminiApiKey.value());
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", generationConfig: { responseMimeType: "application/json" } });
+
+    const prompt = `
+    You are a strict, stoic judge.
+    Contract: "${contractTitle}"
+    Behavior: "${contractBehavior}"
+    
+    Violation Report:
+    Reason: ${reason}
+    Story: ${story}
+    User Decision: ${decision}
+    
+    Task: Judge this situation.
+    Output JSON:
+    {
+      "verdict": "GUILTY" or "ACQUITTED",
+      "reasoning": "Short, stern explanation."
+    }
+    `;
+
+    try {
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return JSON.parse(response.text());
+    } catch (e) {
+        logger.error("Judging Error", e);
+        throw new functions.https.HttpsError('internal', 'Judging failed.');
+    }
+});
