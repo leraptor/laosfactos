@@ -53,7 +53,6 @@ import {
   Trophy,
   Skull,
   Scale,
-  Scale,
   Trash2,
   MoreHorizontal
 } from 'lucide-react';
