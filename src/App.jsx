@@ -58,7 +58,8 @@ import {
   Trash2,
   MoreHorizontal,
   Book,
-  Bell
+  Bell,
+  Brain
 } from 'lucide-react';
 
 // --- Utility Functions ---
@@ -784,6 +785,17 @@ export default function Laosfactos() {
     }
   };
 
+  const handleArchiveBriefing = async () => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        'dailyBriefing.archived': true
+      });
+    } catch (e) {
+      console.error("Error archiving briefing:", e);
+    }
+  };
+
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-500 font-mono">LOADING CONTRACTS...</div>;
 
   return (
@@ -914,7 +926,7 @@ export default function Laosfactos() {
 
 // --- Sub-Components ---
 
-function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onComplete, onCreate, onConsultOracle, onDelete, onOpenJournal, loading, contractsLoading }) {
+function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onComplete, onCreate, onConsultOracle, onDelete, onOpenJournal, loading, contractsLoading, dailyBriefing, onArchiveBriefing }) {
   const activeContracts = contracts.filter(c => c.status === 'active');
   const pausedContracts = contracts.filter(c => c.status === 'paused');
 
@@ -967,6 +979,32 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
 
   return (
     <div className="space-y-8">
+
+      {/* Daily Briefing Widget */}
+      {dailyBriefing && !dailyBriefing.archived && (
+        <div className="bg-gradient-to-r from-indigo-950/40 to-slate-950 border border-indigo-500/20 rounded-xl p-4 sm:p-6 backdrop-blur-sm relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={onArchiveBriefing}
+              className="text-indigo-400 hover:text-indigo-300 text-xs uppercase tracking-wider font-bold"
+            >
+              Archive
+            </button>
+          </div>
+          <div className="flex gap-4 items-start">
+            <div className="p-3 bg-indigo-500/10 rounded-lg">
+              <Brain className="w-6 h-6 text-indigo-400" />
+            </div>
+            <div className="space-y-2 max-w-2xl">
+              <h3 className="text-indigo-400 text-sm font-bold tracking-widest uppercase">Daily Protocol</h3>
+              <p className="text-slate-300 font-serif italic text-lg leading-relaxed">
+                "{dailyBriefing.text}"
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Active Contracts List */}
       <div className="space-y-4">
         <div className="flex justify-between items-end">
