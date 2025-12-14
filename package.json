@@ -12,6 +12,7 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@tailwindcss/vite": "^4.1.17",
+    "canvas-confetti": "^1.9.4",
     "firebase": "^12.6.0",
     "lucide-react": "^0.556.0",
     "react": "^19.2.0",

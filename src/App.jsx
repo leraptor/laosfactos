@@ -61,6 +61,7 @@ import {
   Bell,
 
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
 
 // --- Utility Functions ---
 
@@ -556,6 +557,88 @@ function OracleModal({ contract, onClose }) {
   );
 }
 
+// --- Victory Modal ---
+function VictoryModal({ contract, onClose, onFinalize }) {
+  useEffect(() => {
+    // Fire confetti on mount
+    const duration = 3 * 1000;
+    const end = Date.now() + duration;
+
+    (function frame() {
+      confetti({
+        particleCount: 5,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0 },
+        colors: ['#eab308', '#ffffff'] // Gold and White
+      });
+      confetti({
+        particleCount: 5,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1 },
+        colors: ['#eab308', '#ffffff']
+      });
+
+      if (Date.now() < end) {
+        requestAnimationFrame(frame);
+      }
+    }());
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
+      <div className="relative w-full max-w-lg bg-gradient-to-br from-amber-950/40 to-slate-900 border border-amber-500/30 rounded-2xl p-8 flex flex-col items-center text-center shadow-2xl animate-in zoom-in-95 duration-500">
+
+        {/* Glowing Background Effect */}
+        <div className="absolute inset-0 bg-amber-500/10 blur-3xl rounded-full opacity-50 animate-pulse pointer-events-none"></div>
+
+        <div className="relative z-10 mb-6 group">
+          <div className="absolute inset-0 bg-amber-400 blur-xl opacity-20 group-hover:opacity-40 transition-opacity rounded-full"></div>
+          <Trophy className="w-24 h-24 text-amber-400 drop-shadow-[0_0_15px_rgba(251,191,36,0.5)] animate-bounce" />
+        </div>
+
+        <h2 className="relative z-10 text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-600 uppercase tracking-widest mb-2 filter drop-shadow-sm">
+          Victory!
+        </h2>
+
+        <p className="relative z-10 text-slate-300 font-serif italic text-lg mb-8">
+          The protocol has been fulfilled. Honor is yours.
+        </p>
+
+        <div className="relative z-10 w-full bg-slate-950/50 border border-amber-900/30 rounded-xl p-6 mb-8 space-y-4">
+          <div>
+            <div className="text-xs text-amber-500/60 uppercase tracking-widest font-bold mb-1">Contract</div>
+            <div className="text-xl text-white font-bold"><SafeRender content={contract.title} /></div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-800">
+              <div className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-1">Final Streak</div>
+              <div className="text-2xl text-white font-mono font-bold">{contract.streak} <span className="text-sm text-slate-500 font-normal">days</span></div>
+            </div>
+            <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-800">
+              <div className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-1">Status</div>
+              <div className="text-amber-400 font-bold uppercase text-sm flex items-center justify-center gap-1 h-8">
+                <CheckCircle2 className="w-4 h-4" /> Discharged
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <Button
+          onClick={onFinalize}
+          variant="gold"
+          className="relative z-10 w-full py-4 text-lg shadow-amber-900/20 shadow-xl hover:shadow-amber-500/20 hover:scale-105 transition-all duration-300"
+        >
+          Claim Honor & Archive
+        </Button>
+
+      </div>
+    </div>
+  );
+}
+
 // --- Main App Logic ---
 
 export default function Laosfactos() {
@@ -567,6 +650,7 @@ export default function Laosfactos() {
   const [activeViolationContract, setActiveViolationContract] = useState(null);
   const [activeOracleContract, setActiveOracleContract] = useState(null); // New Oracle State
   const [activeJournalContract, setActiveJournalContract] = useState(null); // New Journal State
+  const [victoryContract, setVictoryContract] = useState(null); // New Victory State
   const [contractsLoading, setContractsLoading] = useState(true);
 
   // --- Auth & Data Loading ---
@@ -695,6 +779,15 @@ export default function Laosfactos() {
 
   const handleCompleteContract = async (contract) => {
     if (!user) return;
+    // Don't archive yet, show the victory modal first!
+    setVictoryContract(contract);
+  };
+
+  const finalizeCompletion = async () => {
+    if (!user || !victoryContract) return;
+
+    const contract = victoryContract;
+
     try {
       console.log("Completing contract:", contract.id);
       const contractRef = doc(db, 'users', user.uid, 'contracts', contract.id);
@@ -704,6 +797,7 @@ export default function Laosfactos() {
         archivedAt: serverTimestamp()
       });
       // Force view refresh or just rely on snapshot
+      setVictoryContract(null);
     } catch (e) {
       console.error("Error completing contract:", e);
       alert("Failed to complete contract: " + e.message);
@@ -881,8 +975,8 @@ export default function Laosfactos() {
             )}
 
             {/* Modals */}
-            {view === 'violation' && activeViolationContract && (
-              <ViolationFlow
+            {activeViolationContract && (
+              <ViolationFlow // Renamed to ViolationModal if that's the intent, but keeping as ViolationFlow based on original code
                 contract={activeViolationContract}
                 onCancel={() => {
                   setActiveViolationContract(null);
@@ -904,6 +998,14 @@ export default function Laosfactos() {
                 contract={activeJournalContract}
                 user={user}
                 onClose={() => setActiveJournalContract(null)}
+              />
+            )}
+
+            {victoryContract && ( // 5. Render VictoryModal
+              <VictoryModal
+                contract={victoryContract}
+                onClose={() => setVictoryContract(null)}
+                onFinalize={finalizeCompletion}
               />
             )}
 
