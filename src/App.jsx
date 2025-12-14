@@ -6,6 +6,7 @@ import {
   signInAnonymously,
   onAuthStateChanged,
 } from 'firebase/auth';
+import { getMessaging, getToken } from 'firebase/messaging';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   getFirestore,
@@ -18,7 +19,8 @@ import {
   query,
   where,
   serverTimestamp,
-  writeBatch
+  writeBatch,
+  setDoc
 } from 'firebase/firestore';
 import {
   Shield,
@@ -55,7 +57,8 @@ import {
   Scale,
   Trash2,
   MoreHorizontal,
-  Book
+  Book,
+  Bell
 } from 'lucide-react';
 
 // --- Utility Functions ---
@@ -175,10 +178,11 @@ const appId = "laosfactos_production";
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const messaging = getMessaging(app);
 
 // --- Constants ---
 const MAX_ACTIVE_CONTRACTS = 10;
-const MAX_EXCEPTIONS = 3;
+const MAX_EXCEPTIONS = 5;
 
 const PILLARS = [
   { id: 'longevity', label: 'Longevity', icon: Heart, color: 'text-rose-400' },
@@ -756,6 +760,30 @@ export default function Laosfactos() {
     }
   };
 
+  const handleEnableNotifications = async () => {
+    try {
+      if (!("Notification" in window)) {
+        alert("This browser does not support desktop notifications");
+        return;
+      }
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        // VAPID key is often required. If you see an error about missing VAPID key, generating a pair in Firebase Console -> Cloud Messaging is needed.
+        // Pass it as { vapidKey: 'YOUR_KEY' }
+        const token = await getToken(messaging);
+        if (token && user) {
+          await setDoc(doc(db, 'users', user.uid), { fcmToken: token }, { merge: true });
+          alert("Notifications Enabled! You'll receive your daily briefing tomorrow.");
+        } else {
+          console.warn("No registration token available. Request permission to generate one.");
+        }
+      }
+    } catch (e) {
+      console.error("Notification permission error:", e);
+      alert("Error enabling notifications. Check console for details (often VAPID key missing).");
+    }
+  };
+
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-500 font-mono">LOADING CONTRACTS...</div>;
 
   return (
@@ -772,6 +800,13 @@ export default function Laosfactos() {
                 LAOSFACTOS
               </h1>
               <div className="flex gap-2">
+                <button
+                  onClick={handleEnableNotifications}
+                  className="p-2 rounded-full text-slate-400 hover:bg-slate-900 transition-colors"
+                  title="Enable Daily Briefing"
+                >
+                  <Bell className="w-5 h-5" />
+                </button>
                 <button
                   onClick={() => setView('history')}
                   className={`p-2 rounded-full transition-colors ${view === 'history' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-900'}`}
