@@ -493,8 +493,11 @@ function OracleModal({ contract, onClose }) {
         setVerdict({ error: "No result returned from Oracle." });
       }
     } catch (err) {
-      console.error("Oracle Error:", err);
-      setVerdict({ error: err.toString() });
+      console.error("Oracle Error Full Object:", err);
+      // Firebase errors often have code, message, and details.
+      const errorMessage = err.message || err.toString();
+      const errorDetails = err.details ? JSON.stringify(err.details) : '';
+      setVerdict({ error: errorMessage + (errorDetails ? ` (${errorDetails})` : '') });
     } finally {
       setIsLoading(false);
     }
