@@ -885,6 +885,7 @@ export default function Laosfactos() {
                 MAX STREAK: {Math.max(...contracts.map(c => c.streak || 0))}
               </span>
             )}
+            <span className="text-[9px] text-slate-700 font-mono">v.{typeof __COMMIT_HASH__ !== 'undefined' ? __COMMIT_HASH__ : 'dev'}</span>
           </div>
         </div>
       </div>
