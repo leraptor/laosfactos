@@ -59,7 +59,7 @@ import {
   MoreHorizontal,
   Book,
   Bell,
-  Brain
+
 } from 'lucide-react';
 
 // --- Utility Functions ---
@@ -450,19 +450,13 @@ function OracleModal({ contract, onClose }) {
     if (!query.trim()) return;
     setIsLoading(true);
 
-    const systemPrompt = `You are a Strict Contract Arbiter. Review a situation against a specific contract.
-    
-    Contract Rules:
-    - Title: "${contract.title}"
-    - Core Behavior: "${contract.behavior}"
-    - Exceptions: ${JSON.stringify(contract.exceptions)}
     const result = await callAIJudge({
       situation: query,
       contractTitle: contract.title,
       contractBehavior: contract.behavior,
       contractExceptions: contract.exceptions
     });
-    
+
     if (result) setVerdict(result);
     setIsLoading(false);
   };
@@ -501,8 +495,8 @@ function OracleModal({ contract, onClose }) {
         )}
 
         {verdict && (
-          <div className={`p-4 rounded border - l - 4 animate -in fade -in ${ verdict.status === 'ALLOWED' ? 'bg-emerald-950/30 border-emerald-500' : 'bg-rose-950/30 border-rose-500' } `}>
-            <div className={`text - xl font - black uppercase tracking - widest mb - 2 ${ verdict.status === 'ALLOWED' ? 'text-emerald-400' : 'text-rose-500' } `}>
+          <div className={"p-4 rounded border-l-4 animate-in fade-in " + (verdict.status === 'ALLOWED' ? 'bg-emerald-950/30 border-emerald-500' : 'bg-rose-950/30 border-rose-500')}>
+            <div className={"text-xl font-black uppercase tracking-widest mb-2 " + (verdict.status === 'ALLOWED' ? 'text-emerald-400' : 'text-rose-500')}>
               <SafeRender content={verdict.status} />
             </div>
             <p className="text-slate-300 text-sm font-mono leading-relaxed">
@@ -795,14 +789,14 @@ export default function Laosfactos() {
                 </button>
                 <button
                   onClick={() => setView('history')}
-                  className={`p - 2 rounded - full transition - colors ${ view === 'history' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-900' } `}
+                  className={"p-2 rounded-full transition-colors " + (view === 'history' ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-slate-900")}
                   title="The Ledger"
                 >
                   <Archive className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => setView('review')}
-                  className={`p - 2 rounded - full transition - colors ${ view === 'review' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-900' } `}
+                  className={"p-2 rounded-full transition-colors " + (view === 'review' ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-slate-900")}
                   title="Review Contracts"
                 >
                   <Activity className="w-5 h-5" />
@@ -984,7 +978,7 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
         <div className="flex justify-between items-end">
           <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
             Today's Contracts
-            <span className={`px - 1.5 py - 0.5 rounded text - [10px] ${ isFull ? 'bg-amber-900/40 text-amber-500' : 'bg-slate-800 text-slate-400' } `}>
+            <span className={"px-1.5 py-0.5 rounded text-[10px] " + (isFull ? "bg-amber-900/40 text-amber-500" : "bg-slate-800 text-slate-400")}>
               {slotsUsed}/{MAX_ACTIVE_CONTRACTS}
             </span>
           </h2>
@@ -1068,19 +1062,19 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
   const isExpired = daysLeft !== null && daysLeft < 0;
 
   return (
-    <div className={`relative group transition - all duration - 300 ${ isDone ? 'opacity-60' : 'opacity-100' } `}>
+    <div className={"relative group transition-all duration-300 " + (isDone ? "opacity-60" : "opacity-100")}>
       <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 flex flex-col gap-4 shadow-sm hover:border-slate-700">
 
         {/* Header */}
         <div className="flex justify-between items-start gap-4">
           <div className="space-y-1 min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <PillarIcon className={`w - 3 h - 3 ${ pillar.color } flex - shrink - 0`} />
-              <span className={`text - [10px] font - bold uppercase tracking - wider ${ pillar.color } `}>{pillar.label}</span>
+              <PillarIcon className={"w-3 h-3 flex-shrink-0 " + pillar.color} />
+              <span className={"text-[10px] font-bold uppercase tracking-wider " + pillar.color}>{pillar.label}</span>
               {daysLeft !== null && !isFuture && (
-                <span className={`text - [10px] font - bold uppercase tracking - wider ${ daysLeft < 3 ? 'text-rose-500' : 'text-slate-500' } ml - 2 flex items - center gap - 1`}>
+                <span className={"text-[10px] font-bold uppercase tracking-wider ml-2 flex items-center gap-1 " + (daysLeft < 3 ? "text-rose-500" : "text-slate-500")}>
                   <Clock className="w-3 h-3" />
-                  {isExpired ? 'Completed' : `${ daysLeft }d left`}
+                  {isExpired ? 'Completed' : (daysLeft + "d left")}
                 </span>
               )}
             </div>
@@ -1179,7 +1173,7 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
               <Trophy className="w-4 h-4" /> Claim Victory & Archive
             </button>
           ) : isDone ? (
-            <div className={`w - full py - 2 rounded flex items - center justify - center gap - 2 font - bold text - sm ${ isKept ? 'bg-emerald-950/30 text-emerald-500 border border-emerald-900/50' : isBroken ? 'bg-rose-950/30 text-rose-500 border border-rose-900/50' : 'bg-slate-800 text-slate-400' } `}>
+            <div className={"w-full py-2 rounded flex items-center justify-center gap-2 font-bold text-sm " + (isKept ? "bg-emerald-950/30 text-emerald-500 border border-emerald-900/50" : isBroken ? "bg-rose-950/30 text-rose-500 border border-rose-900/50" : "bg-slate-800 text-slate-400")}>
               {isKept && <><CheckCircle2 className="w-4 h-4" /> CONTRACT KEPT</>}
               {isBroken && <><AlertTriangle className="w-4 h-4" /> VIOLATION LOGGED</>}
               {todayLog?.status === 'exception' && <><PauseCircle className="w-4 h-4" /> EXCEPTION DAY</>}
@@ -1294,7 +1288,7 @@ function HistoryView({ contracts, onBack, onOpenJournal }) {
             return (
               <div
                 key={c.id}
-                className={`relative p - 5 rounded - lg border ${ isCompleted ? 'gold-frame' : isBreached ? 'bg-slate-900 border-rose-900/30' : 'bg-slate-900 border-slate-800' } `}
+                className={"relative p-5 rounded-lg border " + (isCompleted ? "gold-frame" : isBreached ? "bg-slate-900 border-rose-900/30" : "bg-slate-900 border-slate-800")}
               >
                 {/* Visual Stamp Overlay for Breached */}
                 {isBreached && (
@@ -1303,7 +1297,7 @@ function HistoryView({ contracts, onBack, onOpenJournal }) {
 
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className={`font - bold text - lg ${ isCompleted ? 'text-amber-400' : 'text-slate-300' } `}><SafeRender content={c.title} /></h3>
+                    <h3 className={"font-bold text-lg " + (isCompleted ? "text-amber-400" : "text-slate-300")}><SafeRender content={c.title} /></h3>
                     <div className="text-xs text-slate-500 font-mono mt-1">
                       Final Streak: {c.streak} days
                     </div>
@@ -1431,13 +1425,12 @@ function CreateContract({ onCancel, onSubmit }) {
 
   const handlePreMortemAudit = async () => {
     setIsAuditing(true);
-    const systemPrompt = `You are a Devil's Advocate lawyer. Review this personal contract.
-    Contract Details: ${ JSON.stringify(formData) }
-    
-    Find 1 specific, likely loophole the user's future self will exploit. Be cynical.
-    Return JSON: { "weakness": "string", "suggestion": "string" } `;
+    const systemPrompt = "You are a Devil's Advocate lawyer. Review this personal contract.\n" +
+      "Contract Details: " + JSON.stringify(formData) + "\n\n" +
+      "Find 1 specific, likely loophole the user's future self will exploit. Be cynical.\n" +
+      "Return JSON: { \"weakness\": \"string\", \"suggestion\": \"string\" }";
 
-    const result = await callGemini("Audit this contract.", systemPrompt);
+    const result = await callAIBackend("Audit this contract.", systemPrompt);
     if (result) {
       setAuditResult(result);
     }
@@ -1445,7 +1438,7 @@ function CreateContract({ onCancel, onSubmit }) {
   };
 
   const generateWitnessLink = () => {
-    const mockLink = `https://laosfactos.app/c/${Math.random().toString(36).substr(2, 6)}`;
+    const mockLink = "https://laosfactos.app/c/" + Math.random().toString(36).substr(2, 6);
     copyToClipboard(mockLink);
     update('witnessLinked', true);
     alert("Witness Link Copied to Clipboard! Send this to your accountability partner.");
@@ -1518,7 +1511,7 @@ function CreateContract({ onCancel, onSubmit }) {
     const isDone = sealingStage === 'done';
 
     return (
-      <div className={`fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center overflow-hidden ${isImpact ? 'animate-shake' : ''}`}>
+      <div className={"fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center overflow-hidden " + (isImpact ? "animate-shake" : "")}>
         {isImpact && <div className="absolute inset-0 bg-white opacity-20 animate-flash pointer-events-none z-50"></div>}
         <div className="relative w-full max-w-sm text-center p-8">
           <div className="relative mx-auto w-32 h-32 mb-8 flex items-center justify-center">
@@ -1533,7 +1526,7 @@ function CreateContract({ onCancel, onSubmit }) {
             )}
             {isImpact && (
               <div className="relative">
-                <Shield className={`w-32 h-32 ${isDone ? 'text-emerald-500' : 'text-slate-700'} transition-colors duration-500`} />
+                <Shield className={"w-32 h-32 transition-colors duration-500 " + (isDone ? "text-emerald-500" : "text-slate-700")} />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="border-[6px] border-emerald-500 text-emerald-500 text-4xl font-black px-4 py-2 opacity-0 animate-stamp-slam tracking-widest uppercase rounded-lg bg-emerald-950/90 backdrop-blur-sm shadow-[0_0_50px_rgba(16,185,129,0.5)]">
                     LOCKED
@@ -1636,12 +1629,12 @@ function CreateContract({ onCancel, onSubmit }) {
                     <button
                       key={p.id}
                       onClick={() => update('pillar', p.id)}
-                      className={`flex items-center gap-3 p-3 rounded-md border transition-all ${isSelected ? `bg-slate-800 border-indigo-500 ring-1 ring-indigo-500` : 'bg-slate-900 border-slate-700 hover:border-slate-500'}`}
+                      className={"flex items-center gap-3 p-3 rounded-md border transition-all " + (isSelected ? "bg-slate-800 border-indigo-500 ring-1 ring-indigo-500" : "bg-slate-900 border-slate-700 hover:border-slate-500")}
                     >
-                      <div className={`p-2 rounded bg-slate-950 ${isSelected ? p.color : 'text-slate-500'}`}>
+                      <div className={"p-2 rounded bg-slate-950 " + (isSelected ? p.color : "text-slate-500")}>
                         <Icon className="w-5 h-5" />
                       </div>
-                      <span className={`font-medium ${isSelected ? 'text-white' : 'text-slate-400'}`}>{p.label}</span>
+                      <span className={"font-medium " + (isSelected ? "text-white" : "text-slate-400")}>{p.label}</span>
                     </button>
                   );
                 })}
@@ -1661,7 +1654,7 @@ function CreateContract({ onCancel, onSubmit }) {
                 <button
                   key={t}
                   onClick={() => update('type', t)}
-                  className={`flex-1 py-2 text-xs font-bold rounded ${formData.type === t ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                  className={"flex-1 py-2 text-xs font-bold rounded " + (formData.type === t ? "bg-indigo-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")}
                 >
                   {t === 'AVOID' ? 'I WILL AVOID' : 'I MUST DO'}
                 </button>
@@ -1701,7 +1694,7 @@ function CreateContract({ onCancel, onSubmit }) {
                     <button
                       key={days}
                       onClick={() => setDuration(days)}
-                      className={`border py-2 px-3 rounded text-xs font-bold transition-all ${selectedDuration === days ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/30' : 'bg-slate-900 border-slate-700 hover:bg-slate-800 hover:border-indigo-500 text-slate-300'}`}
+                      className={"border py-2 px-3 rounded text-xs font-bold transition-all " + (selectedDuration === days ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/30" : "bg-slate-900 border-slate-700 hover:bg-slate-800 hover:border-indigo-500 text-slate-300")}
                     >
                       {days} Days
                     </button>
@@ -1857,7 +1850,7 @@ function CreateContract({ onCancel, onSubmit }) {
               </div>
               <button
                 onClick={generateWitnessLink}
-                className={`flex items-center gap-2 text-xs font-bold px-3 py-2 rounded transition-colors ${formData.witnessLinked ? 'bg-blue-900/30 text-blue-400 border border-blue-800' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}
+                className={"flex items-center gap-2 text-xs font-bold px-3 py-2 rounded transition-colors " + (formData.witnessLinked ? "bg-blue-900/30 text-blue-400 border border-blue-800" : "bg-slate-800 text-slate-300 hover:bg-slate-700")}
               >
                 {formData.witnessLinked ? <><CheckCircle2 className="w-3 h-3" /> Link Generated</> : <><LinkIcon className="w-3 h-3" /> Copy Link</>}
               </button>
@@ -1900,22 +1893,20 @@ function ViolationFlow({ contract, onCancel, onSubmit }) {
     if (!story.trim()) return;
     setIsAiLoading(true);
 
-    const systemPrompt = `You are a Stoic Judge. Analyze the user's violation of a serious contract.
-    Contract: "${contract.title}"
-    User Story: "${story}"
-    
-    Return JSON only with:
-    - verdict: A short, brutal but fair philosophical truth about why they failed (max 20 words).
-    - repair: A concrete, immediate repair action (e.g. "Do 20 pushups now", "Write 100x I will not fail").
-    `;
+    const systemPrompt = "You are a Stoic Judge. Analyze the user's violation of a serious contract.\n" +
+      "Contract: \"" + contract.title + "\"\n" +
+      "User Story: \"" + story + "\"\n\n" +
+      "Return JSON only with:\n" +
+      "- verdict: A short, brutal but fair philosophical truth about why they failed (max 20 words).\n" +
+      "- repair: A concrete, immediate repair action (e.g. \"Do 20 pushups now\", \"Write 100x I will not fail\").";
 
-    const result = await callGemini("Analyze this slip.", systemPrompt);
+    const result = await callAIBackend("Analyze this slip.", systemPrompt);
     if (result) setAiVerdict(result);
     setIsAiLoading(false);
   };
 
   const handleNotifyWitness = () => {
-    const text = `I broke my contract "${contract.title}". Reason: ${reason}. Explanation: ${story}. Keep me accountable.`;
+    const text = "I broke my contract \"" + contract.title + "\". Reason: " + reason + ". Explanation: " + story + ". Keep me accountable.";
     if (navigator.share) {
       navigator.share({ title: 'Contract Violation', text: text }).catch(console.error);
     } else {
@@ -1945,7 +1936,7 @@ function ViolationFlow({ contract, onCancel, onSubmit }) {
                 <button
                   key={r}
                   onClick={() => setReason(r)}
-                  className={`text-xs px-3 py-2 rounded border ${reason === r ? 'bg-rose-900/40 border-rose-700 text-rose-300' : 'bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-600'}`}
+                  className={"text-xs px-3 py-2 rounded border " + (reason === r ? "bg-rose-900/40 border-rose-700 text-rose-300" : "bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-600")}
                 >
                   {r}
                 </button>
@@ -2007,7 +1998,7 @@ function ViolationFlow({ contract, onCancel, onSubmit }) {
             <div className="grid grid-cols-1 gap-2">
               <button
                 onClick={() => setDecision('recommit')}
-                className={`p-3 rounded border text-left flex items-center gap-3 ${decision === 'recommit' ? 'bg-slate-800 border-indigo-500 ring-1 ring-indigo-500' : 'bg-slate-950 border-slate-800'}`}
+                className={"p-3 rounded border text-left flex items-center gap-3 " + (decision === 'recommit' ? "bg-slate-800 border-indigo-500 ring-1 ring-indigo-500" : "bg-slate-950 border-slate-800")}
               >
                 <div className="p-2 bg-slate-900 rounded text-indigo-400"><Clock className="w-4 h-4" /></div>
                 <div>
@@ -2018,7 +2009,7 @@ function ViolationFlow({ contract, onCancel, onSubmit }) {
 
               <button
                 onClick={() => setDecision('pause')}
-                className={`p-3 rounded border text-left flex items-center gap-3 ${decision === 'pause' ? 'bg-slate-800 border-indigo-500 ring-1 ring-indigo-500' : 'bg-slate-950 border-slate-800'}`}
+                className={"p-3 rounded border text-left flex items-center gap-3 " + (decision === 'pause' ? "bg-slate-800 border-indigo-500 ring-1 ring-indigo-500" : "bg-slate-950 border-slate-800")}
               >
                 <div className="p-2 bg-slate-900 rounded text-amber-400"><PauseCircle className="w-4 h-4" /></div>
                 <div>
@@ -2029,7 +2020,7 @@ function ViolationFlow({ contract, onCancel, onSubmit }) {
 
               <button
                 onClick={() => setDecision('retire')}
-                className={`p-3 rounded border text-left flex items-center gap-3 ${decision === 'retire' ? 'bg-rose-900/20 border-rose-800 ring-1 ring-rose-900' : 'bg-slate-950 border-slate-800'}`}
+                className={"p-3 rounded border text-left flex items-center gap-3 " + (decision === 'retire' ? "bg-rose-900/20 border-rose-800 ring-1 ring-rose-900" : "bg-slate-950 border-slate-800")}
               >
                 <div className="p-2 bg-rose-900 rounded text-rose-400"><Skull className="w-4 h-4" /></div>
                 <div>
