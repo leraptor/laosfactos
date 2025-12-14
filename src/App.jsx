@@ -672,7 +672,7 @@ export default function Laosfactos() {
 
   const handleCompleteContract = async (contract) => {
     if (!user) return;
-    const contractRef = doc(db, 'artifacts', appId, 'users', user.uid, 'contracts', contract.id);
+    const contractRef = doc(db, 'users', user.uid, 'contracts', contract.id);
     await updateDoc(contractRef, {
       status: 'archived',
       outcome: 'completed',
@@ -699,7 +699,7 @@ export default function Laosfactos() {
       const batch = writeBatch(db);
 
       // 1. Log the Violation Event
-      const violRef = doc(collection(db, 'artifacts', appId, 'users', user.uid, 'violations'));
+      const violRef = doc(collection(db, 'users', user.uid, 'violations'));
       batch.set(violRef, {
         ...violationData,
         contractId: activeViolationContract.id,
@@ -708,7 +708,7 @@ export default function Laosfactos() {
       });
 
       // 2. Log Today as 'broken'
-      const logRef = doc(collection(db, 'artifacts', appId, 'users', user.uid, 'logs'));
+      const logRef = doc(collection(db, 'users', user.uid, 'logs'));
       batch.set(logRef, {
         contractId: activeViolationContract.id,
         date: today,
@@ -718,7 +718,7 @@ export default function Laosfactos() {
       });
 
       // 3. Reset Streak on Contract
-      const contractRef = doc(db, 'artifacts', appId, 'users', user.uid, 'contracts', activeViolationContract.id);
+      const contractRef = doc(db, 'users', user.uid, 'contracts', activeViolationContract.id);
 
       let newStatus = activeViolationContract.status;
       let updates = {
