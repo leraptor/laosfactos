@@ -54,7 +54,8 @@ import {
   Skull,
   Scale,
   Trash2,
-  MoreHorizontal
+  MoreHorizontal,
+  Book
 } from 'lucide-react';
 
 // --- Utility Functions ---
@@ -545,6 +546,7 @@ export default function Laosfactos() {
   const [todayLogs, setTodayLogs] = useState({});
   const [activeViolationContract, setActiveViolationContract] = useState(null);
   const [activeOracleContract, setActiveOracleContract] = useState(null); // New Oracle State
+  const [activeJournalContract, setActiveJournalContract] = useState(null); // New Journal State
   const [contractsLoading, setContractsLoading] = useState(true);
 
   // --- Auth & Data Loading ---
@@ -803,6 +805,7 @@ export default function Laosfactos() {
                 onDelete={handleDeleteContract}
                 onComplete={handleCompleteContract}
                 onCreate={() => setView('create')}
+                onOpenJournal={(contract) => setActiveJournalContract(contract)}
                 loading={loading}
                 contractsLoading={contractsLoading}
               />
@@ -834,6 +837,14 @@ export default function Laosfactos() {
               />
             )}
 
+            {activeJournalContract && (
+              <JournalModal
+                contract={activeJournalContract}
+                user={user}
+                onClose={() => setActiveJournalContract(null)}
+              />
+            )}
+
             {view === 'review' && (
               <ReviewView
                 contracts={contracts}
@@ -845,6 +856,7 @@ export default function Laosfactos() {
               <HistoryView
                 contracts={contracts}
                 onBack={() => setView('dashboard')}
+                onOpenJournal={(contract) => setActiveJournalContract(contract)}
               />
             )}
           </main>
@@ -867,7 +879,7 @@ export default function Laosfactos() {
 
 // --- Sub-Components ---
 
-function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onComplete, onCreate, onConsultOracle, onDelete, loading, contractsLoading }) {
+function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onComplete, onCreate, onConsultOracle, onDelete, onOpenJournal, loading, contractsLoading }) {
   const activeContracts = contracts.filter(c => c.status === 'active');
   const pausedContracts = contracts.filter(c => c.status === 'paused');
 
@@ -952,6 +964,7 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
             onConsultOracle={onConsultOracle}
             onDelete={onDelete}
             onComplete={onComplete}
+            onOpenJournal={onOpenJournal}
           />
         ))}
       </div>
@@ -971,7 +984,7 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
   );
 }
 
-function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onConsultOracle, onDelete, onComplete }) {
+function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onConsultOracle, onDelete, onComplete, onOpenJournal }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -1017,11 +1030,6 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <PillarIcon className={`w-3 h-3 ${pillar.color} flex-shrink-0`} />
               <span className={`text-[10px] font-bold uppercase tracking-wider ${pillar.color}`}>{pillar.label}</span>
-              {contract.witnessLinked && (
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 ml-2 flex items-center gap-1">
-                  <Eye className="w-3 h-3" /> Witnessed
-                </span>
-              )}
               {daysLeft !== null && !isFuture && (
                 <span className={`text-[10px] font-bold uppercase tracking-wider ${daysLeft < 3 ? 'text-rose-500' : 'text-slate-500'} ml-2 flex items-center gap-1`}>
                   <Clock className="w-3 h-3" />
@@ -1045,6 +1053,14 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
               title="Consult the Oracle"
             >
               <Scale className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpenJournal(contract); }}
+              className="bg-slate-950 p-2 rounded border border-slate-800 hover:border-blue-500/50 hover:bg-slate-900 transition-colors text-slate-400 hover:text-blue-400"
+              title="Contract Journal"
+            >
+              <Book className="w-4 h-4" />
             </button>
 
             <div className="relative" ref={menuRef}>
@@ -1072,9 +1088,17 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
 
         {/* Body Text */}
         {!isDone && (
-          <p className="text-xs text-slate-400 font-mono pl-3 border-l-2 border-slate-800 break-words">
-            <SafeRender content={contract.behavior} />
-          </p>
+          <div className="pl-3 border-l-2 border-slate-800 space-y-2">
+            <p className="text-xs text-slate-400 font-mono break-words">
+              <SafeRender content={contract.behavior} />
+            </p>
+            {contract.penalty && (
+              <div className="text-xs font-bold text-rose-400/80 flex items-start gap-1.5 pt-1">
+                <AlertOctagon className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                <span>Penalty: <SafeRender content={contract.penalty} /></span>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Exceptions Badge if present */}
@@ -1196,7 +1220,7 @@ function ReviewView({ contracts, onBack }) {
   );
 }
 
-function HistoryView({ contracts, onBack }) {
+function HistoryView({ contracts, onBack, onOpenJournal }) {
   const archived = contracts.filter(c => c.status === 'archived');
 
   return (
@@ -1237,6 +1261,13 @@ function HistoryView({ contracts, onBack }) {
                       Final Streak: {c.streak} days
                     </div>
                   </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onOpenJournal(c); }}
+                    className="p-2 rounded hover:bg-slate-800 text-slate-500 hover:text-blue-400 transition-colors"
+                    title="View Journal"
+                  >
+                    <Book className="w-5 h-5" />
+                  </button>
                   {isCompleted && <Trophy className="w-6 h-6 text-amber-400" />}
                   {isBreached && <Skull className="w-6 h-6 text-rose-800" />}
                 </div>
@@ -1984,6 +2015,92 @@ function ViolationFlow({ contract, onCancel, onSubmit }) {
           </Button>
         </div>
 
+      </div>
+    </div>
+  );
+}
+
+// --- Journal Modal ---
+function JournalModal({ contract, user, onClose }) {
+  const [logs, setLogs] = useState([]);
+  const [newLog, setNewLog] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user || !contract) return;
+    const q = query(
+      collection(db, 'users', user.uid, 'contracts', contract.id, 'journal'),
+      // orderBy('createdAt', 'desc') // Requires index, using client sort for now if small
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Client-side sort to avoid index creation for now
+      data.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+      setLogs(data);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [user, contract]);
+
+  const handleAddLog = async () => {
+    if (!newLog.trim()) return;
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'contracts', contract.id, 'journal'), {
+        text: newLog.trim(),
+        createdAt: serverTimestamp(),
+        type: 'manual'
+      });
+      setNewLog('');
+    } catch (e) {
+      console.error("Error adding log:", e);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm p-6 flex items-center justify-center">
+      <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-6 flex flex-col h-[70vh] animate-in zoom-in-95">
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center gap-2 text-blue-400 font-bold text-lg uppercase tracking-widest">
+            <Book className="w-6 h-6" /> Contract Journal
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-white"><XCircle className="w-5 h-5" /></button>
+        </div>
+
+        <div className="bg-slate-950/50 p-3 rounded border border-slate-800 mb-4">
+          <h3 className="font-bold text-slate-200 text-sm"><SafeRender content={contract.title} /></h3>
+          <p className="text-xs text-slate-500 font-mono mt-1 line-clamp-2"><SafeRender content={contract.behavior} /></p>
+        </div>
+
+        {/* Logs List */}
+        <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-2">
+          {loading ? (
+            <div className="text-center text-slate-600 text-xs animate-pulse mt-10">Loading thoughts...</div>
+          ) : logs.length === 0 ? (
+            <div className="text-center text-slate-600 text-xs mt-10 italic">No journal entries yet.</div>
+          ) : (
+            logs.map(log => (
+              <div key={log.id} className="bg-slate-800/50 border border-slate-700/50 rounded p-3 text-sm">
+                <p className="text-slate-300 whitespace-pre-wrap"><SafeRender content={log.text} /></p>
+                <div className="text-[10px] text-slate-600 mt-2 text-right">
+                  {formatDate(log.createdAt)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Input Area */}
+        <div className="space-y-2 pt-4 border-t border-slate-800">
+          <TextArea
+            placeholder="Log your thoughts, near-misses, or wins..."
+            value={newLog}
+            onChange={e => setNewLog(e.target.value)}
+            rows={2}
+          />
+          <Button onClick={handleAddLog} disabled={!newLog.trim()} className="w-full" variant="secondary">
+            Add Entry
+          </Button>
+        </div>
       </div>
     </div>
   );
