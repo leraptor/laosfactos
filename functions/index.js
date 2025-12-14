@@ -1,4 +1,4 @@
-const { onCall } = require("firebase-functions/v2/https");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
@@ -140,7 +140,7 @@ exports.consultOracle = onCall({
 }, async (request) => {
     // 1. Validate Auth
     if (!request.auth) {
-        throw new functions.https.HttpsError('failed-precondition', 'The function must be called while authenticated.');
+        throw new HttpsError('failed-precondition', 'The function must be called while authenticated.');
     }
 
     const { contractTitle, contractBehavior, userQuery } = request.data;
@@ -166,7 +166,7 @@ exports.consultOracle = onCall({
         return { text: response.text() };
     } catch (e) {
         logger.error("Oracle Error", e);
-        throw new functions.https.HttpsError('internal', `The Oracle is silent: ${e.message}`);
+        throw new HttpsError('internal', `The Oracle is silent: ${e.message}`);
     }
 });
 
@@ -175,7 +175,7 @@ exports.draftContract = onCall({
     secrets: [geminiApiKey]
 }, async (request) => {
     if (!request.auth) {
-        throw new functions.https.HttpsError('failed-precondition', 'Authentication required.');
+        throw new HttpsError('failed-precondition', 'Authentication required.');
     }
 
     const { userGoal } = request.data;
@@ -196,7 +196,7 @@ exports.draftContract = onCall({
         return JSON.parse(response.text());
     } catch (e) {
         logger.error("Drafting Error", e);
-        throw new functions.https.HttpsError('internal', `Drafting failed: ${e.message}`);
+        throw new HttpsError('internal', `Drafting failed: ${e.message}`);
     }
 });
 
@@ -204,7 +204,7 @@ exports.judgeViolation = onCall({
     secrets: [geminiApiKey]
 }, async (request) => {
     if (!request.auth) {
-        throw new functions.https.HttpsError('failed-precondition', 'Authentication required.');
+        throw new HttpsError('failed-precondition', 'Authentication required.');
     }
 
     const { reason, story, decision, contractTitle, contractBehavior } = request.data;
@@ -235,6 +235,6 @@ exports.judgeViolation = onCall({
         return JSON.parse(response.text());
     } catch (e) {
         logger.error("Judging Error", e);
-        throw new functions.https.HttpsError('internal', `Judging failed: ${e.message}`);
+        throw new HttpsError('internal', `Judging failed: ${e.message}`);
     }
 });
