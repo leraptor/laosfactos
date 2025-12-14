@@ -117,14 +117,42 @@ const formatDate = (val) => {
 
 // --- AI Helper (Backend) ---
 async function callAIJudge(data) {
-  try {
-    const judgeViolation = httpsCallable(functions, 'judgeViolation');
-    const result = await judgeViolation(data);
-    return result.data;
-  } catch (e) {
-    console.error("AI Judge Error:", e);
-    return { verdict: "ERROR", reasoning: "The Void is silent." };
-  }
+  const consultOracle = httpsCallable(functions, 'consultOracle');
+  const result = await consultOracle({
+    userQuery: data.situation,
+    contractTitle: data.contractTitle,
+    contractBehavior: data.contractBehavior
+  });
+
+  // Heuristic adapter since backend returns raw text
+  const text = result.data.text || "";
+  const lower = text.toLowerCase();
+  // Assume allowed unless it mentions failure/violation/forbidden
+  const isForbidden = lower.includes("fail") || lower.includes("violation") || lower.includes("forbidden") || lower.includes("no") || lower.includes("guilty");
+
+  return {
+    isAllowed: !isForbidden,
+    explanation: text
+  };
+}
+
+// Missing function definition
+async function callAIBackend(instruction, systemPrompt) {
+  // Reuse draftContract as a generic text-in/json-out endpoint if possible, 
+  // or consultOracle for text-in/text-out.
+  // Given usage (Audit/Analysis), we want JSON. 
+  // draftContract takes 'userGoal' and returns JSON. Let's hijack it or use judgeViolation.
+
+  // Actually, let's use judgeViolation but pass our prompt as the "story".
+  const judgeViolation = httpsCallable(functions, 'judgeViolation');
+  const result = await judgeViolation({
+    reason: "AUDIT_REQUEST",
+    story: systemPrompt, // Passing the full prompt as the story
+    decision: "PENDING",
+    contractTitle: "SYSTEM_AUDIT",
+    contractBehavior: "STRICT_ANALYSIS"
+  });
+  return result.data;
 }
 
 async function callAIDrafting(userGoal) {
@@ -449,16 +477,27 @@ function OracleModal({ contract, onClose }) {
   const handleJudge = async () => {
     if (!query.trim()) return;
     setIsLoading(true);
+    setVerdict(null); // Clear previous
 
-    const result = await callAIJudge({
-      situation: query,
-      contractTitle: contract.title,
-      contractBehavior: contract.behavior,
-      contractExceptions: contract.exceptions
-    });
+    try {
+      const result = await callAIJudge({
+        situation: query,
+        contractTitle: contract.title,
+        contractBehavior: contract.behavior,
+        contractExceptions: contract.exceptions
+      });
 
-    if (result) setVerdict(result);
-    setIsLoading(false);
+      if (result) {
+        setVerdict(result);
+      } else {
+        setVerdict({ error: "No result returned from Oracle." });
+      }
+    } catch (err) {
+      console.error("Oracle Error:", err);
+      setVerdict({ error: err.toString() });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -495,13 +534,28 @@ function OracleModal({ contract, onClose }) {
         )}
 
         {verdict && (
-          <div className={"p-4 rounded border-l-4 animate-in fade-in " + (verdict.status === 'ALLOWED' ? 'bg-emerald-950/30 border-emerald-500' : 'bg-rose-950/30 border-rose-500')}>
-            <div className={"text-xl font-black uppercase tracking-widest mb-2 " + (verdict.status === 'ALLOWED' ? 'text-emerald-400' : 'text-rose-500')}>
-              <SafeRender content={verdict.status} />
-            </div>
-            <p className="text-slate-300 text-sm font-mono leading-relaxed">
-              "<SafeRender content={verdict.reasoning} />"
-            </p>
+          <div className={"p-4 rounded-lg animate-in fade-in slide-in-from-bottom-2 border " + (verdict.error ? "bg-rose-950/50 border-rose-900" : verdict.isAllowed ? "bg-emerald-950/50 border-emerald-900" : "bg-rose-950/50 border-rose-900")}>
+            {verdict.error ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-rose-500 font-bold uppercase tracking-widest text-xs">
+                  <AlertOctagon className="w-4 h-4" /> System Error
+                </div>
+                <p className="text-rose-200 text-sm font-mono break-all">
+                  {verdict.error}
+                </p>
+              </div>
+            ) : (
+              // Success Case
+              <div className="space-y-3">
+                <div className={"font-bold text-lg flex items-center gap-2 " + (verdict.isAllowed ? "text-emerald-400" : "text-rose-400")}>
+                  {verdict.isAllowed ? <CheckCircle2 className="w-6 h-6" /> : <XCircle className="w-6 h-6" />}
+                  {verdict.isAllowed ? "PERMITTED" : "FORBIDDEN"}
+                </div>
+                <div className="pt-3 border-t border-slate-700/50">
+                  <p className="text-slate-300 italic">"<SafeRender content={verdict.explanation} />"</p>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
