@@ -1136,7 +1136,7 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
                 </span>
               )}
             </div>
-            <h3 className="font-semibold text-white leading-tight truncate"><SafeRender content={contract.title} /></h3>
+            <h3 className="font-semibold text-white leading-tight"><SafeRender content={contract.title} /></h3>
           </div>
 
           {/* Actions / Menu */}
