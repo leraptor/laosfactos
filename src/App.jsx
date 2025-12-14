@@ -53,7 +53,9 @@ import {
   Trophy,
   Skull,
   Scale,
-  Trash2
+  Scale,
+  Trash2,
+  MoreHorizontal
 } from 'lucide-react';
 
 // --- Utility Functions ---
@@ -672,12 +674,19 @@ export default function Laosfactos() {
 
   const handleCompleteContract = async (contract) => {
     if (!user) return;
-    const contractRef = doc(db, 'users', user.uid, 'contracts', contract.id);
-    await updateDoc(contractRef, {
-      status: 'archived',
-      outcome: 'completed',
-      archivedAt: serverTimestamp()
-    });
+    try {
+      console.log("Completing contract:", contract.id);
+      const contractRef = doc(db, 'users', user.uid, 'contracts', contract.id);
+      await updateDoc(contractRef, {
+        status: 'archived',
+        outcome: 'completed',
+        archivedAt: serverTimestamp()
+      });
+      // Force view refresh or just rely on snapshot
+    } catch (e) {
+      console.error("Error completing contract:", e);
+      alert("Failed to complete contract: " + e.message);
+    }
   };
 
   const handleDeleteContract = async (contractId) => {
@@ -873,17 +882,6 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
     return aLogged ? 1 : -1;
   });
 
-  const getDaysRemaining = (endDateStr) => {
-    if (!endDateStr) return null;
-    const end = new Date(endDateStr);
-    const now = new Date();
-    const diffTime = end - now;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-  };
-
-  const todayStr = new Date().toISOString().split('T')[0];
-
   if (loading || contractsLoading) {
     return (
       <div className="space-y-4">
@@ -945,139 +943,18 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
           )}
         </div>
 
-        {sortedActive.map(contract => {
-          const log = todayLogs[contract.id];
-          const isDone = !!log;
-          const isKept = log?.status === 'kept';
-          const isBroken = log?.status === 'broken';
-
-          const pillar = PILLARS.find(p => p.id === contract.pillar) || PILLARS[0];
-          const PillarIcon = pillar.icon;
-          const exceptions = Array.isArray(contract.exceptions) ? contract.exceptions : (contract.exceptions ? [contract.exceptions] : []);
-
-          const daysLeft = getDaysRemaining(contract.endDate);
-          const isFuture = contract.startDate && contract.startDate > todayStr;
-          const isExpired = daysLeft !== null && daysLeft < 0;
-
-          return (
-            <div key={contract.id} className={`relative group transition-all duration-300 ${isDone ? 'opacity-60' : 'opacity-100'}`}>
-              <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 flex flex-col gap-4 shadow-sm hover:border-slate-700">
-
-                {/* Header */}
-                <div className="flex justify-between items-start">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <PillarIcon className={`w-3 h-3 ${pillar.color}`} />
-                      <span className={`text-[10px] font-bold uppercase tracking-wider ${pillar.color}`}>{pillar.label}</span>
-                      {contract.witnessLinked && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 ml-2 flex items-center gap-1">
-                          <Eye className="w-3 h-3" /> Witnessed
-                        </span>
-                      )}
-                      {daysLeft !== null && !isFuture && (
-                        <span className={`text-[10px] font-bold uppercase tracking-wider ${daysLeft < 3 ? 'text-rose-500' : 'text-slate-500'} ml-2 flex items-center gap-1`}>
-                          <Clock className="w-3 h-3" />
-                          {isExpired ? 'Completed' : `${daysLeft}d left`}
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="font-semibold text-white leading-tight"><SafeRender content={contract.title} /></h3>
-                  </div>
-
-                  {/* Oracle Button */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onConsultOracle(contract); }}
-                      className="bg-slate-950 p-2 rounded border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-900 transition-colors text-slate-400 hover:text-indigo-400"
-                      title="Consult the Oracle"
-                    >
-                      <Scale className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDelete(contract.id); }}
-                      className="bg-slate-950 p-2 rounded border border-slate-800 hover:border-rose-500/50 hover:bg-rose-950/30 transition-colors text-slate-400 hover:text-rose-400"
-                      title="Void Contract"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                    <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-slate-800">
-                      <Flame className="w-3 h-3 text-orange-500" />
-                      <span className="text-xs font-mono font-bold text-slate-300">{contract.streak}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Body Text */}
-                {!isDone && (
-                  <p className="text-xs text-slate-400 font-mono pl-3 border-l-2 border-slate-800">
-                    <SafeRender content={contract.behavior} />
-                  </p>
-                )}
-
-                {/* Exceptions Badge if present */}
-                {!isDone && exceptions.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {exceptions.map((ex, i) => (
-                      <span key={i} className="text-[10px] px-1.5 py-0.5 bg-slate-800 rounded text-slate-500 border border-slate-700">
-                        Ex: <SafeRender content={ex} />
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="pt-2">
-                  {isFuture ? (
-                    <div className="w-full py-3 bg-slate-950/50 border border-slate-800 border-dashed rounded text-center">
-                      <div className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center justify-center gap-2">
-                        <Hourglass className="w-4 h-4" />
-                        Pending Start
-                      </div>
-                      <div className="text-[10px] text-slate-600 mt-1">
-                        Starts on {new Date(contract.startDate).toLocaleDateString()}
-                      </div>
-                    </div>
-                  ) : isExpired ? (
-                    <button
-                      onClick={() => onComplete(contract)}
-                      className="w-full bg-amber-500/10 border border-amber-500/50 hover:bg-amber-500/20 text-amber-400 py-3 rounded-md font-bold text-sm transition-all flex items-center justify-center gap-2"
-                    >
-                      <Trophy className="w-4 h-4" /> Claim Victory & Archive
-                    </button>
-                  ) : isDone ? (
-                    <div className={`w-full py-2 rounded flex items-center justify-center gap-2 font-bold text-sm ${isKept ? 'bg-emerald-950/30 text-emerald-500 border border-emerald-900/50' : isBroken ? 'bg-rose-950/30 text-rose-500 border border-rose-900/50' : 'bg-slate-800 text-slate-400'}`}>
-                      {isKept && <><CheckCircle2 className="w-4 h-4" /> CONTRACT KEPT</>}
-                      {isBroken && <><AlertTriangle className="w-4 h-4" /> VIOLATION LOGGED</>}
-                      {log?.status === 'exception' && <><PauseCircle className="w-4 h-4" /> EXCEPTION DAY</>}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => onCheckIn(contract.id, 'kept')}
-                        className="bg-slate-800 hover:bg-emerald-900/20 hover:border-emerald-800 hover:text-emerald-400 border border-slate-700 text-slate-300 py-3 rounded-md font-medium text-sm transition-all flex items-center justify-center gap-2"
-                      >
-                        <CheckCircle2 className="w-4 h-4" /> Kept
-                      </button>
-                      <button
-                        onClick={() => onReportViolation(contract)}
-                        className="bg-slate-800 hover:bg-rose-900/20 hover:border-rose-800 hover:text-rose-400 border border-slate-700 text-slate-300 py-3 rounded-md font-medium text-sm transition-all flex items-center justify-center gap-2"
-                      >
-                        <XCircle className="w-4 h-4" /> Broke it
-                      </button>
-                    </div>
-                  )}
-                  {!isDone && !isFuture && !isExpired && (
-                    <div className="mt-3 flex justify-center">
-                      <button onClick={() => onCheckIn(contract.id, 'exception')} className="text-[10px] text-slate-600 hover:text-slate-400 uppercase tracking-wider font-bold">
-                        Mark as Exception / Skip
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {sortedActive.map(contract => (
+          <ContractCard
+            key={contract.id}
+            contract={contract}
+            todayLog={todayLogs[contract.id]}
+            onCheckIn={onCheckIn}
+            onReportViolation={onReportViolation}
+            onConsultOracle={onConsultOracle}
+            onDelete={onDelete}
+            onComplete={onComplete}
+          />
+        ))}
       </div>
 
       {pausedContracts.length > 0 && (
@@ -1091,6 +968,177 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onConsultOracle, onDelete, onComplete }) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const getDaysRemaining = (endDateStr) => {
+    if (!endDateStr) return null;
+    const end = new Date(endDateStr);
+    const now = new Date();
+    const diffTime = end - now;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const isDone = !!todayLog;
+  const isKept = todayLog?.status === 'kept';
+  const isBroken = todayLog?.status === 'broken';
+
+  const pillar = PILLARS.find(p => p.id === contract.pillar) || PILLARS[0];
+  const PillarIcon = pillar.icon;
+  const exceptions = Array.isArray(contract.exceptions) ? contract.exceptions : (contract.exceptions ? [contract.exceptions] : []);
+
+  const daysLeft = getDaysRemaining(contract.endDate);
+  const isFuture = contract.startDate && contract.startDate > todayStr;
+  const isExpired = daysLeft !== null && daysLeft < 0;
+
+  return (
+    <div className={`relative group transition-all duration-300 ${isDone ? 'opacity-60' : 'opacity-100'}`}>
+      <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 flex flex-col gap-4 shadow-sm hover:border-slate-700">
+
+        {/* Header */}
+        <div className="flex justify-between items-start gap-4">
+          <div className="space-y-1 min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <PillarIcon className={`w-3 h-3 ${pillar.color} flex-shrink-0`} />
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${pillar.color}`}>{pillar.label}</span>
+              {contract.witnessLinked && (
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 ml-2 flex items-center gap-1">
+                  <Eye className="w-3 h-3" /> Witnessed
+                </span>
+              )}
+              {daysLeft !== null && !isFuture && (
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${daysLeft < 3 ? 'text-rose-500' : 'text-slate-500'} ml-2 flex items-center gap-1`}>
+                  <Clock className="w-3 h-3" />
+                  {isExpired ? 'Completed' : `${daysLeft}d left`}
+                </span>
+              )}
+            </div>
+            <h3 className="font-semibold text-white leading-tight truncate"><SafeRender content={contract.title} /></h3>
+          </div>
+
+          {/* Actions / Menu */}
+          <div className="flex items-center gap-2 flex-shrink-0 relative">
+            <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-slate-800">
+              <Flame className="w-3 h-3 text-orange-500" />
+              <span className="text-xs font-mono font-bold text-slate-300">{contract.streak}</span>
+            </div>
+
+            <button
+              onClick={(e) => { e.stopPropagation(); onConsultOracle(contract); }}
+              className="bg-slate-950 p-2 rounded border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-900 transition-colors text-slate-400 hover:text-indigo-400"
+              title="Consult the Oracle"
+            >
+              <Scale className="w-4 h-4" />
+            </button>
+
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen); }}
+                className="bg-slate-950 p-2 rounded border border-slate-800 hover:border-slate-600 hover:bg-slate-900 transition-colors text-slate-400 hover:text-slate-200"
+                title="More Options"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+
+              {isMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-48 bg-slate-900 border border-slate-700 rounded-md shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(contract.id); setIsMenuOpen(false); }}
+                    className="w-full text-left px-4 py-3 text-rose-400 hover:bg-rose-950/20 hover:text-rose-300 text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" /> Void Contract
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Body Text */}
+        {!isDone && (
+          <p className="text-xs text-slate-400 font-mono pl-3 border-l-2 border-slate-800 break-words">
+            <SafeRender content={contract.behavior} />
+          </p>
+        )}
+
+        {/* Exceptions Badge if present */}
+        {!isDone && exceptions.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {exceptions.map((ex, i) => (
+              <span key={i} className="text-[10px] px-1.5 py-0.5 bg-slate-800 rounded text-slate-500 border border-slate-700 max-w-full truncate">
+                Ex: <SafeRender content={ex} />
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="pt-2">
+          {isFuture ? (
+            <div className="w-full py-3 bg-slate-950/50 border border-slate-800 border-dashed rounded text-center">
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center justify-center gap-2">
+                <Hourglass className="w-4 h-4" />
+                Pending Start
+              </div>
+              <div className="text-[10px] text-slate-600 mt-1">
+                Starts on {new Date(contract.startDate).toLocaleDateString()}
+              </div>
+            </div>
+          ) : isExpired ? (
+            <button
+              onClick={() => onComplete(contract)}
+              className="w-full bg-amber-500/10 border border-amber-500/50 hover:bg-amber-500/20 text-amber-400 py-3 rounded-md font-bold text-sm transition-all flex items-center justify-center gap-2"
+            >
+              <Trophy className="w-4 h-4" /> Claim Victory & Archive
+            </button>
+          ) : isDone ? (
+            <div className={`w-full py-2 rounded flex items-center justify-center gap-2 font-bold text-sm ${isKept ? 'bg-emerald-950/30 text-emerald-500 border border-emerald-900/50' : isBroken ? 'bg-rose-950/30 text-rose-500 border border-rose-900/50' : 'bg-slate-800 text-slate-400'}`}>
+              {isKept && <><CheckCircle2 className="w-4 h-4" /> CONTRACT KEPT</>}
+              {isBroken && <><AlertTriangle className="w-4 h-4" /> VIOLATION LOGGED</>}
+              {todayLog?.status === 'exception' && <><PauseCircle className="w-4 h-4" /> EXCEPTION DAY</>}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => onCheckIn(contract.id, 'kept')}
+                className="bg-slate-800 hover:bg-emerald-900/20 hover:border-emerald-800 hover:text-emerald-400 border border-slate-700 text-slate-300 py-3 rounded-md font-medium text-sm transition-all flex items-center justify-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" /> Kept
+              </button>
+              <button
+                onClick={() => onReportViolation(contract)}
+                className="bg-slate-800 hover:bg-rose-900/20 hover:border-rose-800 hover:text-rose-400 border border-slate-700 text-slate-300 py-3 rounded-md font-medium text-sm transition-all flex items-center justify-center gap-2"
+              >
+                <XCircle className="w-4 h-4" /> Broke it
+              </button>
+            </div>
+          )}
+          {!isDone && !isFuture && !isExpired && (
+            <div className="mt-3 flex justify-center">
+              <button onClick={() => onCheckIn(contract.id, 'exception')} className="text-[10px] text-slate-600 hover:text-slate-400 uppercase tracking-wider font-bold">
+                Mark as Exception / Skip
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
