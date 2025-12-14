@@ -28,7 +28,7 @@ exports.sendDailyBriefing = onSchedule({
 
     // We need to initialize the model INSIDE the function after getting the secret
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const promises = [];
 
@@ -147,7 +147,7 @@ exports.consultOracle = onCall({
 
     // 2. Call Gemini Securely
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `
     You are the Oracle of the Void. A stoic, strict, but fair judge of self-contracts.
@@ -166,7 +166,7 @@ exports.consultOracle = onCall({
         return { text: response.text() };
     } catch (e) {
         logger.error("Oracle Error", e);
-        throw new functions.https.HttpsError('internal', 'The Oracle is silent.');
+        throw new functions.https.HttpsError('internal', `The Oracle is silent: ${e.message}`);
     }
 });
 
@@ -180,7 +180,7 @@ exports.draftContract = onCall({
 
     const { userGoal } = request.data;
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", generationConfig: { responseMimeType: "application/json" } });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } });
 
     const prompt = `
     You are a Stoic Contract Lawyer.
@@ -196,7 +196,7 @@ exports.draftContract = onCall({
         return JSON.parse(response.text());
     } catch (e) {
         logger.error("Drafting Error", e);
-        throw new functions.https.HttpsError('internal', 'Drafting failed.');
+        throw new functions.https.HttpsError('internal', `Drafting failed: ${e.message}`);
     }
 });
 
@@ -209,7 +209,7 @@ exports.judgeViolation = onCall({
 
     const { reason, story, decision, contractTitle, contractBehavior } = request.data;
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", generationConfig: { responseMimeType: "application/json" } });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } });
 
     const prompt = `
     You are a strict, stoic judge.
@@ -235,6 +235,6 @@ exports.judgeViolation = onCall({
         return JSON.parse(response.text());
     } catch (e) {
         logger.error("Judging Error", e);
-        throw new functions.https.HttpsError('internal', 'Judging failed.');
+        throw new functions.https.HttpsError('internal', `Judging failed: ${e.message}`);
     }
 });
