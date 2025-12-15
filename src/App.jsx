@@ -652,6 +652,7 @@ export default function Laosfactos() {
   const [activeJournalContract, setActiveJournalContract] = useState(null); // New Journal State
   const [victoryContract, setVictoryContract] = useState(null); // New Victory State
   const [contractsLoading, setContractsLoading] = useState(true);
+  const [dailyBriefing, setDailyBriefing] = useState(null); // Daily Briefing State
 
   // --- Auth & Data Loading ---
   useEffect(() => {
@@ -713,9 +714,21 @@ export default function Laosfactos() {
       setTodayLogs(logs);
     }, (err) => console.error("Logs Error:", err));
 
+    // Listen to User Document for Daily Briefing
+    const userDocRef = doc(db, 'users', user.uid);
+    const unsubUser = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const userData = docSnap.data();
+        if (userData.dailyBriefing) {
+          setDailyBriefing(userData.dailyBriefing);
+        }
+      }
+    }, (err) => console.error("User Doc Error:", err));
+
     return () => {
       unsubContracts();
       unsubLogs();
+      unsubUser();
     };
   }, [user]);
 
@@ -964,6 +977,8 @@ export default function Laosfactos() {
                 onOpenJournal={(contract) => setActiveJournalContract(contract)}
                 loading={loading}
                 contractsLoading={contractsLoading}
+                dailyBriefing={dailyBriefing}
+                onArchiveBriefing={handleArchiveBriefing}
               />
             )}
 

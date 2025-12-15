@@ -45,6 +45,17 @@ async function processUser(userDoc, model) {
     const userData = userDoc.data();
     const fcmToken = userData.fcmToken;
 
+    // Idempotency check: Skip if briefing was already sent today
+    const existingBriefing = userData.dailyBriefing;
+    if (existingBriefing && existingBriefing.timestamp) {
+        const briefingDate = existingBriefing.timestamp.toDate();
+        const today = new Date();
+        if (briefingDate.toDateString() === today.toDateString()) {
+            logger.info(`User ${uid} already received briefing today. Skipping.`);
+            return;
+        }
+    }
+
     try {
         // 2. Build Context: Get Active Contracts
         const contractsSnap = await db.collection('users').doc(uid).collection('contracts')
@@ -63,51 +74,58 @@ async function processUser(userDoc, model) {
             contractContext += `- Contract: ${data.title}. Streak: ${data.streak || 0}. Behavior: ${data.behavior}.\n`;
         });
 
-        // Get recent journals (last 24h) for context
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
+        // 3. Call AI - SHORT prompt for notification (2 lines max, ~80 chars)
+        const notificationPrompt = `
+      You are a Stoic Accountability Partner.
+      The user has these active contracts:
+      ${contractContext}
 
-        const journalSnap = await db.collection('users').doc(uid).collection('contracts') // This query is tricky across all contracts; let's simplify.
-        // Actually, getting all journals for all contracts might be expensive / require collection group query.
-        // Let's stick to active contracts context for now to keep it efficient, or just generic motivation.
-        // User requested "based on what has been done yesterday".
-        // We can do a collectionGroup query if indexes allow, or just skip specific logs for V1.
-        // Let's add a placeholder for "Recent Activity" based on streaks.
+      Task: Write a very short daily briefing for a mobile push notification.
+      
+      Constraints:
+      - Maximum 2 lines, under 80 characters total.
+      - One punchy sentence about their mission today.
+      - No emojis. Serious, stoic tone.
+    `;
 
+        const notificationResult = await model.generateContent(notificationPrompt);
+        const notificationResponse = await notificationResult.response;
+        const notificationText = notificationResponse.text().trim();
 
-        // 3. Call AI
-        const prompt = `
+        // 4. Call AI - LONG prompt for in-app display (3-4 sentences)
+        const inAppPrompt = `
       You are a Stoic Accountability Partner.
       The user has the following active self-contracts:
       ${contractContext}
 
-      Task: Write a daily briefing.
+      Task: Write a daily briefing for their dashboard.
       1. Acknowledge their current streaks.
       2. Give a stoic reflection on Consistency.
       3. Tell them exactly what to focus on today.
       
-      Constraint: Keep it under 3 sentences. No emojis. Serious tone.
+      Constraint: Keep it to 3-4 sentences. No emojis. Serious, philosophical tone.
     `;
 
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const notificationBody = response.text().trim();
+        const inAppResult = await model.generateContent(inAppPrompt);
+        const inAppResponse = await inAppResult.response;
+        const inAppText = inAppResponse.text().trim();
 
-        // 3.5 Save to Firestore for In-App Widget
+        // 5. Save to Firestore for In-App Widget (both texts)
         await db.collection('users').doc(uid).set({
             dailyBriefing: {
-                text: notificationBody,
+                text: inAppText,
+                notificationText: notificationText,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 archived: false
             }
         }, { merge: true });
 
-        // 4. Send Notification
+        // 6. Send Notification with SHORT text
         await admin.messaging().send({
             token: fcmToken,
             notification: {
                 title: "Daily Protocol",
-                body: notificationBody
+                body: notificationText
             },
             // Android specific
             android: {
@@ -127,13 +145,14 @@ async function processUser(userDoc, model) {
             }
         });
 
-        logger.info(`Sent to ${uid}: ${notificationBody}`);
+        logger.info(`Sent to ${uid}: Notification="${notificationText}" | InApp="${inAppText.substring(0, 50)}..."`);
 
     } catch (e) {
         logger.error(`Error processing user ${uid}`, e);
     }
 
 }
+
 
 exports.consultOracle = onCall({
     secrets: [geminiApiKey]
