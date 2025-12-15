@@ -1,5 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
@@ -319,6 +320,109 @@ exports.dailyAutoKeep = onSchedule({
     }
 
     logger.info(`Daily Auto-Keep Complete. Processed ${processed} users. Auto-kept ${autoKeptCount} contracts.`);
+});
+
+// AI Journal Replies: Generate coach reply when user adds a journal entry
+exports.onJournalEntryCreated = onDocumentCreated({
+    document: "users/{userId}/contracts/{contractId}/journal/{entryId}",
+    secrets: [geminiApiKey]
+}, async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) {
+        logger.warn("No data in journal entry snapshot");
+        return;
+    }
+
+    const entryData = snapshot.data();
+    const { userId, contractId, entryId } = event.params;
+
+    // Only reply to manual entries (not auto-generated system logs)
+    if (entryData.type !== 'manual') {
+        logger.info(`Skipping AI reply for non-manual entry: ${entryId}`);
+        return;
+    }
+
+    // Skip if already has a reply (idempotency)
+    if (entryData.aiReply) {
+        logger.info(`Entry ${entryId} already has a reply, skipping`);
+        return;
+    }
+
+    try {
+        // 1. Fetch contract details for context
+        const contractDoc = await db.collection('users').doc(userId)
+            .collection('contracts').doc(contractId).get();
+
+        if (!contractDoc.exists) {
+            logger.error(`Contract ${contractId} not found`);
+            return;
+        }
+
+        const contract = contractDoc.data();
+
+        // 2. Fetch recent journal entries for context (last 5, excluding current)
+        const recentEntriesSnap = await db.collection('users').doc(userId)
+            .collection('contracts').doc(contractId).collection('journal')
+            .orderBy('createdAt', 'desc')
+            .limit(6) // Get 6 to exclude current one
+            .get();
+
+        const recentEntries = [];
+        recentEntriesSnap.forEach(doc => {
+            if (doc.id !== entryId && doc.data().type === 'manual') {
+                recentEntries.push(doc.data().text);
+            }
+        });
+        // Take only last 5
+        const contextEntries = recentEntries.slice(0, 5).reverse();
+
+        // 3. Build the AI prompt
+        const genAI = new GoogleGenerativeAI(geminiApiKey.value());
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+        const recentContext = contextEntries.length > 0
+            ? contextEntries.map((t, i) => `${i + 1}. "${t}"`).join('\n')
+            : 'No previous entries.';
+
+        const prompt = `You are a supportive accountability coach helping someone stick to their personal contract.
+
+CONTRACT: "${contract.title}"
+GOAL: "${contract.behavior}"
+CURRENT STREAK: ${contract.streak || 0} days
+
+RECENT JOURNAL ENTRIES:
+${recentContext}
+
+USER'S NEW ENTRY: "${entryData.text}"
+
+Instructions:
+- Write a SHORT reply (1-2 sentences max) as a real coach would.
+- Be warm, genuine, and specific to what they shared.
+- Celebrate wins enthusiastically. Offer empathy for struggles.
+- If they share a milestone, acknowledge it specially.
+- Use one emoji that fits the mood.
+- Do NOT use markdown formatting.
+- Do NOT be generic or robotic.
+
+Your reply:`;
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const replyText = response.text().trim();
+
+        // 4. Write the reply back to the document
+        await snapshot.ref.update({
+            aiReply: {
+                text: replyText,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            }
+        });
+
+        logger.info(`Generated AI reply for entry ${entryId}: "${replyText.substring(0, 50)}..."`);
+
+    } catch (e) {
+        logger.error(`Error generating AI reply for entry ${entryId}:`, e);
+    }
 });
 
 

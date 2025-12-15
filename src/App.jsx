@@ -2443,19 +2443,69 @@ function JournalModal({ contract, user, onClose }) {
           ) : (
             logs.map(log => {
               const isAuto = log.type === 'auto';
+              const isManual = log.type === 'manual';
+
               return (
-                <div key={log.id} className={"rounded p-3 text-sm border transition-all " + (isAuto ? "bg-indigo-950/20 border-indigo-500/20" : "bg-slate-800/50 border-slate-700/50")}>
+                <div key={log.id} className="space-y-2">
+                  {/* System Log (Auto-kept) */}
                   {isAuto && (
-                    <div className="flex items-center gap-1.5 mb-1 text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
-                      <RefreshCcw className="w-3 h-3" /> System Log
+                    <div className="flex justify-center">
+                      <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-lg px-3 py-2 max-w-[85%]">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
+                          <RefreshCcw className="w-3 h-3" /> System
+                        </div>
+                        <p className="text-indigo-200/80 italic text-xs mt-1">
+                          <SafeRender content={log.text} />
+                        </p>
+                        <div className="text-[9px] text-indigo-500/50 mt-1 text-right">
+                          {formatDate(log.createdAt)}
+                        </div>
+                      </div>
                     </div>
                   )}
-                  <p className={"whitespace-pre-wrap " + (isAuto ? "text-indigo-200/80 italic text-xs" : "text-slate-300")}>
-                    <SafeRender content={log.text} />
-                  </p>
-                  <div className={"text-[10px] mt-2 text-right " + (isAuto ? "text-indigo-500/50" : "text-slate-600")}>
-                    {formatDate(log.createdAt)}
-                  </div>
+
+                  {/* User Message (Manual entry) - Right aligned */}
+                  {isManual && (
+                    <>
+                      <div className="flex justify-end">
+                        <div className="bg-blue-600/20 border border-blue-500/30 rounded-lg rounded-br-sm px-3 py-2 max-w-[85%]">
+                          <p className="text-slate-200 whitespace-pre-wrap text-sm">
+                            <SafeRender content={log.text} />
+                          </p>
+                          <div className="text-[9px] text-blue-400/60 mt-1.5 text-right">
+                            {formatDate(log.createdAt)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* AI Reply - Left aligned */}
+                      {log.aiReply ? (
+                        <div className="flex justify-start">
+                          <div className="bg-indigo-950/40 border border-indigo-500/20 rounded-lg rounded-bl-sm px-3 py-2 max-w-[85%]">
+                            <div className="flex items-center gap-1.5 text-[9px] font-bold text-indigo-400 uppercase tracking-wider mb-1">
+                              <Bot className="w-3 h-3" /> Coach
+                            </div>
+                            <p className="text-indigo-100 text-sm">
+                              <SafeRender content={log.aiReply.text} />
+                            </p>
+                            <div className="text-[9px] text-indigo-500/50 mt-1.5 text-right">
+                              {formatDate(log.aiReply.createdAt)}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Typing indicator while waiting for AI reply */
+                        <div className="flex justify-start">
+                          <div className="bg-indigo-950/20 border border-indigo-500/10 rounded-lg px-3 py-2">
+                            <div className="flex items-center gap-1.5 text-[9px] text-indigo-400/70">
+                              <Bot className="w-3 h-3 animate-pulse" />
+                              <span className="animate-pulse">Coach is typing...</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               );
             })
