@@ -229,6 +229,98 @@ exports.weeklyRollover = onSchedule({
     logger.info(`Weekly Rollover Complete. Processed ${processed} users. Success: ${successCount}, Fail: ${failCount}`);
 });
 
+// Daily Auto-Keep: Check AVOID contracts and auto-fill if missed
+exports.dailyAutoKeep = onSchedule({
+    schedule: "every day 00:01"
+}, async (event) => {
+    logger.info("Starting Daily Auto-Keep...");
+
+    const usersSnapshot = await db.collection('users').get();
+    if (usersSnapshot.empty) return;
+
+    let processed = 0;
+    let autoKeptCount = 0;
+
+    // Calculate "yesterday" (the day we are evaluating)
+    const todayDate = new Date();
+    const yesterdayDate = new Date(todayDate);
+    yesterdayDate.setDate(todayDate.getDate() - 1);
+    const yesterdayStr = yesterdayDate.toISOString().split('T')[0];
+
+    for (const userDoc of usersSnapshot.docs) {
+        const uid = userDoc.id;
+
+        try {
+            // Get active AVOID contracts with autoKeep: true
+            const contractsSnap = await db.collection('users').doc(uid).collection('contracts')
+                .where('status', '==', 'active')
+                .where('type', '==', 'AVOID')
+                .where('autoKeep', '==', true)
+                .get();
+
+            if (contractsSnap.empty) continue;
+
+            // Fetch all logs for yesterday for this user (Optimization)
+            const logsSnap = await db.collection('users').doc(uid).collection('logs')
+                .where('date', '==', yesterdayStr)
+                .get();
+
+            const loggedContractIds = new Set();
+            logsSnap.forEach(doc => loggedContractIds.add(doc.data().contractId));
+
+            const batch = db.batch();
+            let userUpdates = 0;
+
+            for (const contractDoc of contractsSnap.docs) {
+                const contractId = contractDoc.id;
+
+                if (!loggedContractIds.has(contractId)) {
+                    // No log found? Auto-keep it.
+
+                    // 1. Create Log
+                    const logRef = db.collection('users').doc(uid).collection('logs').doc();
+                    batch.set(logRef, {
+                        contractId: contractId,
+                        date: yesterdayStr,
+                        status: 'kept',
+                        source: 'auto',
+                        timestamp: admin.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    // 2. Update Contract Streak
+                    const currentStreak = contractDoc.data().streak || 0;
+                    batch.update(contractDoc.ref, {
+                        streak: currentStreak + 1,
+                        lastCheckIn: admin.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    // 3. Create Journal Entry (Visible History)
+                    const journalRef = db.collection('users').doc(uid).collection('contracts').doc(contractId).collection('journal').doc();
+                    batch.set(journalRef, {
+                        text: "Auto-completed (No violation reported)",
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        type: 'auto'
+                    });
+
+                    autoKeptCount++;
+                    userUpdates++;
+                    logger.info(`Auto-kept contract ${contractId} for user ${uid}`);
+                }
+            }
+
+            if (userUpdates > 0) {
+                await batch.commit();
+            }
+            processed++;
+
+        } catch (e) {
+            logger.error(`Error processing auto-keep for user ${uid}`, e);
+        }
+    }
+
+    logger.info(`Daily Auto-Keep Complete. Processed ${processed} users. Auto-kept ${autoKeptCount} contracts.`);
+});
+
 
 exports.consultOracle = onCall({
     secrets: [geminiApiKey]

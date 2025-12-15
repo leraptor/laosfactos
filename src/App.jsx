@@ -59,6 +59,7 @@ import {
   MoreHorizontal,
   Book,
   Bell,
+  RefreshCcw,
 
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -1457,10 +1458,17 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
             </div>
           )}
           {!isDone && !isFuture && !isExpired && !isWeekly && (
-            <div className="mt-3 flex justify-center">
+            <div className="mt-3 flex flex-col items-center gap-2">
               <button onClick={() => onCheckIn(contract.id, 'exception')} className="text-[10px] text-slate-600 hover:text-slate-400 uppercase tracking-wider font-bold">
                 Mark as Exception / Skip
               </button>
+
+              {contract.autoKeep && (
+                <div className="flex items-center gap-1.5 text-[10px] text-indigo-400/70 font-mono">
+                  <RefreshCcw className="w-3 h-3" />
+                  <span>Auto-completes at 00:01</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1633,7 +1641,8 @@ function CreateContract({ onCancel, onSubmit }) {
     frequency: {
       type: 'daily',      // 'daily' or 'weekly'
       timesPerWeek: 3     // only used if type='weekly'
-    }
+    },
+    autoKeep: true       // New Auto-Keep field
   });
 
   // --- Autosave Logic (New) ---
@@ -1915,13 +1924,34 @@ function CreateContract({ onCancel, onSubmit }) {
               {['AVOID', 'DO'].map(t => (
                 <button
                   key={t}
-                  onClick={() => update('type', t)}
+                  onClick={() => {
+                    update('type', t);
+                    update('autoKeep', t === 'AVOID');
+                  }}
                   className={"flex-1 py-2 text-xs font-bold rounded " + (formData.type === t ? "bg-indigo-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")}
                 >
                   {t === 'AVOID' ? 'I WILL AVOID' : 'I MUST DO'}
                 </button>
               ))}
             </div>
+
+            {/* Auto-Keep Toggle (Only for AVOID) */}
+            {formData.type === 'AVOID' && (
+              <div
+                onClick={() => update('autoKeep', !formData.autoKeep)}
+                className="flex items-center gap-3 p-3 bg-slate-900/50 border border-slate-800 rounded-lg cursor-pointer hover:border-indigo-500/50 transition-colors group"
+              >
+                <div className={"w-10 h-5 rounded-full relative transition-colors " + (formData.autoKeep ? "bg-indigo-600" : "bg-slate-700")}>
+                  <div className={"absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-transform " + (formData.autoKeep ? "translate-x-5" : "")} />
+                </div>
+                <div className="flex-1">
+                  <div className="text-xs font-bold text-slate-200 group-hover:text-white">Auto-Complete Daily</div>
+                  <div className="text-[10px] text-slate-500">
+                    If no violation is reported by midnight, mark as kept.
+                  </div>
+                </div>
+              </div>
+            )}
 
             <TextArea
               label="Define the behavior precisely"
@@ -2411,14 +2441,24 @@ function JournalModal({ contract, user, onClose }) {
           ) : logs.length === 0 ? (
             <div className="text-center text-slate-600 text-xs mt-10 italic">No journal entries yet.</div>
           ) : (
-            logs.map(log => (
-              <div key={log.id} className="bg-slate-800/50 border border-slate-700/50 rounded p-3 text-sm">
-                <p className="text-slate-300 whitespace-pre-wrap"><SafeRender content={log.text} /></p>
-                <div className="text-[10px] text-slate-600 mt-2 text-right">
-                  {formatDate(log.createdAt)}
+            logs.map(log => {
+              const isAuto = log.type === 'auto';
+              return (
+                <div key={log.id} className={"rounded p-3 text-sm border transition-all " + (isAuto ? "bg-indigo-950/20 border-indigo-500/20" : "bg-slate-800/50 border-slate-700/50")}>
+                  {isAuto && (
+                    <div className="flex items-center gap-1.5 mb-1 text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
+                      <RefreshCcw className="w-3 h-3" /> System Log
+                    </div>
+                  )}
+                  <p className={"whitespace-pre-wrap " + (isAuto ? "text-indigo-200/80 italic text-xs" : "text-slate-300")}>
+                    <SafeRender content={log.text} />
+                  </p>
+                  <div className={"text-[10px] mt-2 text-right " + (isAuto ? "text-indigo-500/50" : "text-slate-600")}>
+                    {formatDate(log.createdAt)}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
