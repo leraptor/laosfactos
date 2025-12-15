@@ -122,7 +122,8 @@ async function callAIJudge(data) {
   const result = await consultOracle({
     userQuery: data.situation,
     contractTitle: data.contractTitle,
-    contractBehavior: data.contractBehavior
+    contractBehavior: data.contractBehavior,
+    contractExceptions: data.contractExceptions || []
   });
 
   const { status, explanation } = result.data;
@@ -737,6 +738,17 @@ export default function Laosfactos() {
   const handleCreateContract = async (contractData) => {
     if (!user) return;
     try {
+      // Calculate week start (Monday) for weekly contracts
+      const getWeekStart = () => {
+        const now = new Date();
+        const day = now.getDay();
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
+        const monday = new Date(now.setDate(diff));
+        return monday.toISOString().split('T')[0];
+      };
+
+      const isWeekly = contractData.frequency?.type === 'weekly';
+
       await addDoc(collection(db, 'users', user.uid, 'contracts'), {
         ...contractData,
         userId: user.uid,
@@ -744,7 +756,15 @@ export default function Laosfactos() {
         streak: 0,
         createdAt: serverTimestamp(),
         lastCheckIn: null,
-        history: []
+        history: [],
+        // Initialize weeklyProgress for weekly contracts
+        ...(isWeekly && {
+          weeklyProgress: {
+            weekStart: getWeekStart(),
+            completedCount: 0,
+            lastCheckInDate: null
+          }
+        })
       });
       setView('dashboard');
     } catch (e) {
@@ -757,6 +777,8 @@ export default function Laosfactos() {
     const today = new Date().toISOString().split('T')[0];
     const contract = contracts.find(c => c.id === contractId);
     if (!contract) return;
+
+    const isWeekly = contract.frequency?.type === 'weekly';
 
     try {
       const batch = writeBatch(db);
@@ -771,18 +793,28 @@ export default function Laosfactos() {
         timestamp: serverTimestamp()
       });
 
-      // 2. Update Contract Streak
+      // 2. Update Contract
       const contractRef = doc(db, 'users', user.uid, 'contracts', contractId);
-      let newStreak = contract.streak || 0;
 
-      if (status === 'kept') {
-        newStreak += 1;
+      if (isWeekly && status === 'kept') {
+        // Weekly contract: update weeklyProgress, NOT daily streak
+        const currentCount = contract.weeklyProgress?.completedCount || 0;
+        batch.update(contractRef, {
+          lastCheckIn: serverTimestamp(),
+          'weeklyProgress.completedCount': currentCount + 1,
+          'weeklyProgress.lastCheckInDate': today
+        });
+      } else {
+        // Daily contract: update streak as before
+        let newStreak = contract.streak || 0;
+        if (status === 'kept') {
+          newStreak += 1;
+        }
+        batch.update(contractRef, {
+          lastCheckIn: serverTimestamp(),
+          streak: newStreak
+        });
       }
-
-      batch.update(contractRef, {
-        lastCheckIn: serverTimestamp(),
-        streak: newStreak
-      });
 
       await batch.commit();
     } catch (e) {
@@ -1226,9 +1258,26 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
   const isFuture = contract.startDate && contract.startDate > todayStr;
   const isExpired = daysLeft !== null && daysLeft < 0;
 
+  // Weekly contract helpers
+  const isWeekly = contract.frequency?.type === 'weekly';
+  const weeklyGoal = contract.frequency?.timesPerWeek || 3;
+  const weeklyCompleted = contract.weeklyProgress?.completedCount || 0;
+  const alreadyCheckedToday = contract.weeklyProgress?.lastCheckInDate === todayStr;
+  const weeklyGoalMet = weeklyCompleted >= weeklyGoal;
+
+  // Calculate days left in week (until Sunday)
+  const getDaysLeftInWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0 = Sunday
+    return dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+  };
+  const daysLeftInWeek = getDaysLeftInWeek();
+  const remainingNeeded = Math.max(0, weeklyGoal - weeklyCompleted);
+  const isAtRisk = isWeekly && !weeklyGoalMet && remainingNeeded > daysLeftInWeek;
+
   return (
     <div className={"relative group transition-all duration-300 " + (isDone ? "opacity-60" : "opacity-100")}>
-      <div className="bg-slate-900 border border-slate-800 rounded-lg p-5 flex flex-col gap-4 shadow-sm hover:border-slate-700">
+      <div className={"bg-slate-900 border rounded-lg p-5 flex flex-col gap-4 shadow-sm hover:border-slate-700 " + (isAtRisk ? "border-amber-500/50 shadow-amber-500/10" : "border-slate-800")}>
 
         {/* Header */}
         <div className="flex justify-between items-start gap-4">
@@ -1248,9 +1297,21 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
 
           {/* Actions / Menu */}
           <div className="flex items-center gap-2 flex-shrink-0 relative">
+            {/* Weekly Progress Badge */}
+            {isWeekly && (
+              <div className={"flex items-center gap-1 px-2 py-1 rounded border " +
+                (weeklyGoalMet ? "bg-emerald-950/50 border-emerald-800 text-emerald-400" :
+                  isAtRisk ? "bg-amber-950/50 border-amber-800 text-amber-400" :
+                    "bg-indigo-950/50 border-indigo-800 text-indigo-400")}>
+                <span className="text-xs font-mono font-bold">{weeklyCompleted}/{weeklyGoal}</span>
+                <span className="text-[9px] opacity-70">wk</span>
+              </div>
+            )}
+
             <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-slate-800">
               <Flame className="w-3 h-3 text-orange-500" />
               <span className="text-xs font-mono font-bold text-slate-300">{contract.streak}</span>
+              {isWeekly && <span className="text-[9px] text-slate-500">wks</span>}
             </div>
 
             <button
@@ -1343,7 +1404,43 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
               {isBroken && <><AlertTriangle className="w-4 h-4" /> VIOLATION LOGGED</>}
               {todayLog?.status === 'exception' && <><PauseCircle className="w-4 h-4" /> EXCEPTION DAY</>}
             </div>
+          ) : isWeekly ? (
+            // Weekly contract actions
+            <div className="space-y-3">
+              {weeklyGoalMet ? (
+                <div className="w-full py-3 bg-emerald-950/30 border border-emerald-900/50 rounded-md text-center">
+                  <div className="text-emerald-400 font-bold text-sm flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" /> WEEKLY GOAL MET
+                  </div>
+                  <div className="text-[10px] text-emerald-500/70 mt-1">Check back next week</div>
+                </div>
+              ) : alreadyCheckedToday ? (
+                <div className="w-full py-3 bg-indigo-950/30 border border-indigo-900/50 rounded-md text-center">
+                  <div className="text-indigo-400 font-bold text-sm flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" /> LOGGED TODAY
+                  </div>
+                  <div className="text-[10px] text-indigo-500/70 mt-1">
+                    {remainingNeeded} more by Sunday
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => onCheckIn(contract.id, 'kept')}
+                    className="w-full bg-slate-800 hover:bg-emerald-900/20 hover:border-emerald-800 hover:text-emerald-400 border border-slate-700 text-slate-300 py-3 rounded-md font-medium text-sm transition-all flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Log Completion
+                  </button>
+                  {isAtRisk && (
+                    <div className="text-center text-[10px] text-amber-500 font-bold">
+                      ⚠️ {remainingNeeded} more needed — only {daysLeftInWeek} days left
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           ) : (
+            // Daily contract actions
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={() => onCheckIn(contract.id, 'kept')}
@@ -1359,7 +1456,7 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
               </button>
             </div>
           )}
-          {!isDone && !isFuture && !isExpired && (
+          {!isDone && !isFuture && !isExpired && !isWeekly && (
             <div className="mt-3 flex justify-center">
               <button onClick={() => onCheckIn(contract.id, 'exception')} className="text-[10px] text-slate-600 hover:text-slate-400 uppercase tracking-wider font-bold">
                 Mark as Exception / Skip
@@ -1532,7 +1629,11 @@ function CreateContract({ onCancel, onSubmit }) {
     importance: 3,
     exceptions: [],
     penalty: '',
-    witnessLinked: false
+    witnessLinked: false,
+    frequency: {
+      type: 'daily',      // 'daily' or 'weekly'
+      timesPerWeek: 3     // only used if type='weekly'
+    }
   });
 
   // --- Autosave Logic (New) ---
@@ -1862,6 +1963,53 @@ function CreateContract({ onCancel, onSubmit }) {
                   ))}
                 </div>
               </div>
+            </div>
+
+            {/* Frequency Selector */}
+            <div className="space-y-3">
+              <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Check-in Frequency</label>
+              <div className="flex bg-slate-900 p-1 rounded-md border border-slate-700">
+                <button
+                  onClick={() => update('frequency', { ...formData.frequency, type: 'daily' })}
+                  className={"flex-1 py-2 text-xs font-bold rounded " + (formData.frequency.type === 'daily' ? "bg-indigo-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")}
+                >
+                  DAILY
+                </button>
+                <button
+                  onClick={() => update('frequency', { ...formData.frequency, type: 'weekly' })}
+                  className={"flex-1 py-2 text-xs font-bold rounded " + (formData.frequency.type === 'weekly' ? "bg-indigo-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300")}
+                >
+                  X TIMES / WEEK
+                </button>
+              </div>
+
+              {formData.frequency.type === 'weekly' && (
+                <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4 space-y-3 animate-in fade-in slide-in-from-top-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-slate-400">Times per week:</span>
+                    <span className="text-2xl font-bold text-indigo-400">{formData.frequency.timesPerWeek}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="6"
+                    value={formData.frequency.timesPerWeek}
+                    onChange={(e) => update('frequency', { ...formData.frequency, timesPerWeek: parseInt(e.target.value) })}
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-600">
+                    <span>1x</span>
+                    <span>2x</span>
+                    <span>3x</span>
+                    <span>4x</span>
+                    <span>5x</span>
+                    <span>6x</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 text-center">
+                    Week runs Monday → Sunday. Streak = consecutive successful weeks.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Exception Manager */}

@@ -153,6 +153,82 @@ async function processUser(userDoc, model) {
 
 }
 
+// Weekly Rollover: Evaluate weekly contracts and update streaks
+exports.weeklyRollover = onSchedule({
+    schedule: "every monday 00:01"
+}, async (event) => {
+    logger.info("Starting Weekly Rollover...");
+
+    // Get all users
+    const usersSnapshot = await db.collection('users').get();
+
+    if (usersSnapshot.empty) {
+        logger.info("No users found.");
+        return;
+    }
+
+    let processed = 0;
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const userDoc of usersSnapshot.docs) {
+        const uid = userDoc.id;
+
+        try {
+            // Get all active weekly contracts for this user
+            const contractsSnap = await db.collection('users').doc(uid).collection('contracts')
+                .where('status', '==', 'active')
+                .where('frequency.type', '==', 'weekly')
+                .get();
+
+            if (contractsSnap.empty) continue;
+
+            const batch = db.batch();
+
+            // Calculate new week start (today = Monday)
+            const today = new Date();
+            const newWeekStart = today.toISOString().split('T')[0];
+
+            for (const contractDoc of contractsSnap.docs) {
+                const contract = contractDoc.data();
+                const goal = contract.frequency?.timesPerWeek || 3;
+                const completed = contract.weeklyProgress?.completedCount || 0;
+                const currentStreak = contract.streak || 0;
+
+                // Evaluate: did they meet the goal?
+                const metGoal = completed >= goal;
+                const newStreak = metGoal ? currentStreak + 1 : 0;
+
+                if (metGoal) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+
+                // Update contract: reset weeklyProgress, update streak
+                batch.update(contractDoc.ref, {
+                    streak: newStreak,
+                    weeklyProgress: {
+                        weekStart: newWeekStart,
+                        completedCount: 0,
+                        lastCheckInDate: null
+                    }
+                });
+
+                logger.info(`User ${uid} - Contract "${contract.title}": ${completed}/${goal} → ${metGoal ? 'SUCCESS' : 'FAIL'} (streak: ${newStreak})`);
+            }
+
+            await batch.commit();
+            processed++;
+
+        } catch (e) {
+            logger.error(`Error processing user ${uid}`, e);
+        }
+    }
+
+    logger.info(`Weekly Rollover Complete. Processed ${processed} users. Success: ${successCount}, Fail: ${failCount}`);
+});
+
 
 exports.consultOracle = onCall({
     secrets: [geminiApiKey]
@@ -162,7 +238,12 @@ exports.consultOracle = onCall({
         throw new HttpsError('failed-precondition', 'The function must be called while authenticated.');
     }
 
-    const { contractTitle, contractBehavior, userQuery } = request.data;
+    const { contractTitle, contractBehavior, userQuery, contractExceptions } = request.data;
+
+    // Format exceptions for the prompt
+    const exceptionsText = Array.isArray(contractExceptions) && contractExceptions.length > 0
+        ? contractExceptions.map(e => `- ${e}`).join('\n')
+        : 'None';
 
     // 2. Call Gemini Securely
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
@@ -172,17 +253,25 @@ exports.consultOracle = onCall({
     });
 
     const prompt = `
-    You are the Oracle of the Void. Judge if the User Query violates the Contract.
+    You are the Oracle of the Void. Judge if the User Query violates the Contract, taking into account any defined exceptions.
     
     Contract: "${contractTitle}"
     Behavior: "${contractBehavior}"
     
+    Allowed Exceptions (situations where the contract does NOT apply):
+    ${exceptionsText}
+    
     User Query: "${userQuery}"
+    
+    Instructions:
+    1. If the user's query matches one of the allowed exceptions, respond with "ALLOWED" and explain it's permitted due to the exception.
+    2. If the user's query does not violate the contract behavior, respond with "ALLOWED".
+    3. If the user's query violates the contract and no exception applies, respond with "FORBIDDEN".
     
     Output JSON:
     {
         "status": "ALLOWED" or "FORBIDDEN",
-        "explanation": "A short, stoic explanation of why. Do not use markdown. Do not restate the contract."
+        "explanation": "A short, stoic explanation of why. Reference the exception if applicable. Do not use markdown."
     }
     `;
 
