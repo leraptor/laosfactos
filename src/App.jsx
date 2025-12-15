@@ -940,11 +940,11 @@ export default function Laosfactos() {
     }
   };
 
-  const handleArchiveBriefing = async () => {
+  const handleArchiveBriefing = async (timeOfDay = 'morning') => {
     if (!user) return;
     try {
       await updateDoc(doc(db, 'users', user.uid), {
-        'dailyBriefing.archived': true
+        [`dailyBriefing.${timeOfDay}.archived`]: true
       });
     } catch (e) {
       console.error("Error archiving briefing:", e);
@@ -1147,29 +1147,52 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
     <div className="space-y-8">
 
       {/* Daily Briefing Widget */}
-      {dailyBriefing && !dailyBriefing.archived && (
-        <div className="bg-gradient-to-r from-indigo-950/40 to-slate-950 border border-indigo-500/20 rounded-xl p-4 sm:p-6 backdrop-blur-sm relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+      {(() => {
+        // Determine which brief to show based on current hour
+        const currentHour = new Date().getHours();
+        const timeOfDay = currentHour >= 18 ? 'evening' : 'morning';
+        const brief = dailyBriefing?.[timeOfDay];
+
+        // Don't show if no brief or archived
+        if (!brief || brief.archived) return null;
+
+        // Check if brief is from today
+        const briefDate = brief.timestamp?.toDate?.() || new Date(brief.timestamp);
+        const today = new Date();
+        if (briefDate.toDateString() !== today.toDateString()) return null;
+
+        const isMorning = timeOfDay === 'morning';
+
+        return (
+          <div className={"border rounded-xl p-4 sm:p-6 backdrop-blur-sm relative overflow-hidden group " +
+            (isMorning ? "bg-gradient-to-r from-indigo-950/40 to-slate-950 border-indigo-500/20" : "bg-gradient-to-r from-purple-950/40 to-slate-950 border-purple-500/20")}>
+
+            {/* Archive Button */}
             <button
-              onClick={onArchiveBriefing}
-              className="text-indigo-400 hover:text-indigo-300 text-xs uppercase tracking-wider font-bold"
+              onClick={() => onArchiveBriefing(timeOfDay)}
+              className={"absolute top-3 right-3 p-1.5 rounded-full transition-all opacity-50 hover:opacity-100 " +
+                (isMorning ? "hover:bg-indigo-900/50 text-indigo-400" : "hover:bg-purple-900/50 text-purple-400")}
+              title="Mark as read"
             >
-              Archive
+              <CheckCircle2 className="w-5 h-5" />
             </button>
-          </div>
-          <div className="flex gap-4 items-start">
-            <div className="p-3 bg-indigo-500/10 rounded-lg">
-              <Brain className="w-6 h-6 text-indigo-400" />
+
+            <div className="flex gap-4 items-start">
+              <div className={"p-3 rounded-lg " + (isMorning ? "bg-indigo-500/10" : "bg-purple-500/10")}>
+                <Brain className={"w-6 h-6 " + (isMorning ? "text-indigo-400" : "text-purple-400")} />
+              </div>
+              <div className="space-y-2 max-w-2xl pr-8">
+                <h3 className={(isMorning ? "text-indigo-400" : "text-purple-400") + " text-sm font-bold tracking-widest uppercase"}>
+                  {isMorning ? "Morning Protocol" : "Evening Reflection"}
+                </h3>
+                <p className="text-slate-300 font-serif italic text-lg leading-relaxed">
+                  "{brief.text}"
+                </p>
+              </div>
             </div>
-            <div className="space-y-2 max-w-2xl">
-              <h3 className="text-indigo-400 text-sm font-bold tracking-widest uppercase">Daily Protocol</h3>
-              <p className="text-slate-300 font-serif italic text-lg leading-relaxed">
-                "{dailyBriefing.text}"
-              </p>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Active Contracts List */}
       <div className="space-y-4">
@@ -2397,8 +2420,8 @@ function JournalModal({ contract, user, onClose }) {
     );
     const unsub = onSnapshot(q, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Client-side sort to avoid index creation for now
-      data.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+      // Client-side sort: ascending (oldest first, like WhatsApp)
+      data.sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
       setLogs(data);
       setLoading(false);
     });

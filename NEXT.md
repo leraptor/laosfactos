@@ -1,6 +1,5 @@
 ## In Progress
 
-- In Journal Log, after a log is done, attach a little comment by the llm, who have all the logs and the contract in context -> So for example, I might say: my first run, I'm so proud! and the llm will post a comment to congratulate me on that. The comment can be displayed below the Log, similar to a whatsapp discussion.
 
 
 ## Next Steps
@@ -9,8 +8,8 @@
 - Ensure the Dialy Brief showing in the homepage has the logs of yesteday as part of the context.
 
 ## Done
+- In Journal Log, after a log is done, attach a little comment by the llm, who have all the logs and the contract in context -> So for example, I might say: my first run, I'm so proud! and the llm will post a comment to congratulate me on that. The comment can be displayed below the Log, similar to a whatsapp discussion.
 - Continue Auto Keep Design Deployments and thinking
-
 - When the user claim victory of a contract, create a much more delightful experience, it should not just hide and that's it, acknowledge their victory and make them feel proud and happy!
 - add daily push notifications via PWA with a review of current protocols
 - Add a daily LLM feedback based on logs, current contract, user goals (README.MD of the User, based on the 3 pillars, Sami Board Meetings etc)

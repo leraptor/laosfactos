@@ -12,14 +12,25 @@ const { defineSecret } = require('firebase-functions/params');
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 
 
-exports.sendDailyBriefing = onSchedule({
+// Morning Briefing: Set intentions for the day (08:00)
+exports.sendMorningBriefing = onSchedule({
     schedule: "every day 08:00",
     secrets: [geminiApiKey]
 }, async (event) => {
-    logger.info("Starting Daily Briefing Batch...");
+    logger.info("Starting Morning Briefing Batch...");
+    await processBriefingBatch('morning');
+});
 
-    // 1. Get all users who have an FCM Token
-    // Index might be required on 'fcmToken'
+// Evening Briefing: Reflect on the day (18:00)
+exports.sendEveningBriefing = onSchedule({
+    schedule: "every day 18:00",
+    secrets: [geminiApiKey]
+}, async (event) => {
+    logger.info("Starting Evening Briefing Batch...");
+    await processBriefingBatch('evening');
+});
+
+async function processBriefingBatch(timeOfDay) {
     const usersSnapshot = await db.collection('users').where('fcmToken', '!=', null).get();
 
     if (usersSnapshot.empty) {
@@ -27,38 +38,36 @@ exports.sendDailyBriefing = onSchedule({
         return;
     }
 
-    // We need to initialize the model INSIDE the function after getting the secret
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const promises = [];
-
     usersSnapshot.forEach(userDoc => {
-        promises.push(processUser(userDoc, model));
+        promises.push(processUserBriefing(userDoc, model, timeOfDay));
     });
 
     await Promise.all(promises);
-    logger.info("Batch Complete.");
-});
+    logger.info(`${timeOfDay} Briefing Batch Complete.`);
+}
 
-async function processUser(userDoc, model) {
+async function processUserBriefing(userDoc, model, timeOfDay) {
     const uid = userDoc.id;
     const userData = userDoc.data();
     const fcmToken = userData.fcmToken;
 
-    // Idempotency check: Skip if briefing was already sent today
-    const existingBriefing = userData.dailyBriefing;
+    // Idempotency: Check if this specific briefing was already sent today
+    const existingBriefing = userData.dailyBriefing?.[timeOfDay];
     if (existingBriefing && existingBriefing.timestamp) {
         const briefingDate = existingBriefing.timestamp.toDate();
         const today = new Date();
         if (briefingDate.toDateString() === today.toDateString()) {
-            logger.info(`User ${uid} already received briefing today. Skipping.`);
+            logger.info(`User ${uid} already received ${timeOfDay} briefing today. Skipping.`);
             return;
         }
     }
 
     try {
-        // 2. Build Context: Get Active Contracts
+        // Get Active Contracts
         const contractsSnap = await db.collection('users').doc(uid).collection('contracts')
             .where('status', '==', 'active')
             .get();
@@ -68,91 +77,126 @@ async function processUser(userDoc, model) {
             return;
         }
 
-        // Summarize contracts
         let contractContext = "";
         contractsSnap.forEach(doc => {
             const data = doc.data();
             contractContext += `- Contract: ${data.title}. Streak: ${data.streak || 0}. Behavior: ${data.behavior}.\n`;
         });
 
-        // 3. Call AI - SHORT prompt for notification (2 lines max, ~80 chars)
-        const notificationPrompt = `
-      You are a Stoic Accountability Partner.
-      The user has these active contracts:
-      ${contractContext}
+        // For evening: also get today's journal entries
+        let journalContext = "";
+        if (timeOfDay === 'evening') {
+            const todayStr = new Date().toISOString().split('T')[0];
+            for (const contractDoc of contractsSnap.docs) {
+                const journalSnap = await db.collection('users').doc(uid)
+                    .collection('contracts').doc(contractDoc.id).collection('journal')
+                    .orderBy('createdAt', 'desc')
+                    .limit(3)
+                    .get();
 
-      Task: Write a very short daily briefing for a mobile push notification.
-      
-      Constraints:
-      - Maximum 2 lines, under 80 characters total.
-      - One punchy sentence about their mission today.
-      - No emojis. Serious, stoic tone.
-    `;
+                journalSnap.forEach(jDoc => {
+                    const jData = jDoc.data();
+                    if (jData.type === 'manual') {
+                        journalContext += `- "${jData.text}"\n`;
+                    }
+                });
+            }
+        }
+
+        // Build prompts based on time of day
+        let notificationPrompt, inAppPrompt;
+
+        if (timeOfDay === 'morning') {
+            notificationPrompt = `
+You are a Stoic Accountability Partner. The user has these active contracts:
+${contractContext}
+
+Task: Write a very short MORNING briefing for a mobile push notification.
+Constraints:
+- Maximum 2 lines, under 80 characters total.
+- Focus on what they will accomplish TODAY.
+- No emojis. Serious, stoic tone.
+            `;
+
+            inAppPrompt = `
+You are a Stoic Accountability Partner. The user has these active contracts:
+${contractContext}
+
+Task: Write a MORNING briefing for their dashboard.
+1. Acknowledge their current streaks.
+2. Set their intention for today.
+3. Give a stoic reflection on discipline.
+
+Constraint: 3-4 sentences. No emojis. Serious, philosophical tone.
+            `;
+        } else {
+            // Evening
+            notificationPrompt = `
+You are a Stoic Accountability Partner. The user has these active contracts:
+${contractContext}
+
+Today's Journal Entries:
+${journalContext || 'No journal entries today.'}
+
+Task: Write a very short EVENING reflection for a mobile push notification.
+Constraints:
+- Maximum 2 lines, under 80 characters total.
+- Acknowledge their day's effort.
+- No emojis. Calm, reflective tone.
+            `;
+
+            inAppPrompt = `
+You are a Stoic Accountability Partner. The user has these active contracts:
+${contractContext}
+
+Today's Journal Entries:
+${journalContext || 'No journal entries today.'}
+
+Task: Write an EVENING reflection for their dashboard.
+1. Acknowledge what they accomplished today.
+2. Celebrate any journal entries or wins.
+3. Prepare them mentally for tomorrow.
+
+Constraint: 3-4 sentences. No emojis. Calm, reflective, encouraging tone.
+            `;
+        }
 
         const notificationResult = await model.generateContent(notificationPrompt);
-        const notificationResponse = await notificationResult.response;
-        const notificationText = notificationResponse.text().trim();
-
-        // 4. Call AI - LONG prompt for in-app display (3-4 sentences)
-        const inAppPrompt = `
-      You are a Stoic Accountability Partner.
-      The user has the following active self-contracts:
-      ${contractContext}
-
-      Task: Write a daily briefing for their dashboard.
-      1. Acknowledge their current streaks.
-      2. Give a stoic reflection on Consistency.
-      3. Tell them exactly what to focus on today.
-      
-      Constraint: Keep it to 3-4 sentences. No emojis. Serious, philosophical tone.
-    `;
+        const notificationText = (await notificationResult.response).text().trim();
 
         const inAppResult = await model.generateContent(inAppPrompt);
-        const inAppResponse = await inAppResult.response;
-        const inAppText = inAppResponse.text().trim();
+        const inAppText = (await inAppResult.response).text().trim();
 
-        // 5. Save to Firestore for In-App Widget (both texts)
+        // Save to Firestore with new structure
         await db.collection('users').doc(uid).set({
             dailyBriefing: {
-                text: inAppText,
-                notificationText: notificationText,
-                timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                archived: false
+                [timeOfDay]: {
+                    text: inAppText,
+                    notificationText: notificationText,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    archived: false
+                }
             }
         }, { merge: true });
 
-        // 6. Send Notification with SHORT text
+        // Send Notification
         await admin.messaging().send({
             token: fcmToken,
             notification: {
-                title: "Daily Protocol",
+                title: timeOfDay === 'morning' ? "Morning Protocol" : "Evening Reflection",
                 body: notificationText
             },
-            // Android specific
-            android: {
-                priority: "high",
-                notification: {
-                    icon: "stock_ticker_update" // or standard icon
-                }
-            },
-            // Web specific
-            webpush: {
-                headers: {
-                    Urgency: "high"
-                },
-                notification: {
-                    icon: "/vite.svg"
-                }
-            }
+            android: { priority: "high" },
+            webpush: { headers: { Urgency: "high" }, notification: { icon: "/vite.svg" } }
         });
 
-        logger.info(`Sent to ${uid}: Notification="${notificationText}" | InApp="${inAppText.substring(0, 50)}..."`);
+        logger.info(`Sent ${timeOfDay} to ${uid}: "${notificationText.substring(0, 50)}..."`);
 
     } catch (e) {
-        logger.error(`Error processing user ${uid}`, e);
+        logger.error(`Error processing ${timeOfDay} briefing for user ${uid}`, e);
     }
-
 }
+
 
 // Weekly Rollover: Evaluate weekly contracts and update streaks
 exports.weeklyRollover = onSchedule({
