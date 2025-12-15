@@ -83,24 +83,31 @@ async function processUserBriefing(userDoc, model, timeOfDay) {
             contractContext += `- Contract: ${data.title}. Streak: ${data.streak || 0}. Behavior: ${data.behavior}.\n`;
         });
 
-        // For evening: also get today's journal entries
+        // Get journal entries: yesterday for morning, today for evening
         let journalContext = "";
-        if (timeOfDay === 'evening') {
-            const todayStr = new Date().toISOString().split('T')[0];
-            for (const contractDoc of contractsSnap.docs) {
-                const journalSnap = await db.collection('users').doc(uid)
-                    .collection('contracts').doc(contractDoc.id).collection('journal')
-                    .orderBy('createdAt', 'desc')
-                    .limit(3)
-                    .get();
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
 
-                journalSnap.forEach(jDoc => {
-                    const jData = jDoc.data();
-                    if (jData.type === 'manual') {
+        const targetDate = timeOfDay === 'morning' ? yesterday : today;
+        const dateLabel = timeOfDay === 'morning' ? "Yesterday's" : "Today's";
+
+        for (const contractDoc of contractsSnap.docs) {
+            const journalSnap = await db.collection('users').doc(uid)
+                .collection('contracts').doc(contractDoc.id).collection('journal')
+                .orderBy('createdAt', 'desc')
+                .limit(5)
+                .get();
+
+            journalSnap.forEach(jDoc => {
+                const jData = jDoc.data();
+                if (jData.type === 'manual' && jData.createdAt) {
+                    const entryDate = jData.createdAt.toDate();
+                    if (entryDate.toDateString() === targetDate.toDateString()) {
                         journalContext += `- "${jData.text}"\n`;
                     }
-                });
-            }
+                }
+            });
         }
 
         // Build prompts based on time of day
@@ -111,9 +118,13 @@ async function processUserBriefing(userDoc, model, timeOfDay) {
 You are a Stoic Accountability Partner. The user has these active contracts:
 ${contractContext}
 
+Yesterday's Journal Entries:
+${journalContext || 'No entries yesterday.'}
+
 Task: Write a very short MORNING briefing for a mobile push notification.
 Constraints:
 - Maximum 2 lines, under 80 characters total.
+- If they logged wins yesterday, acknowledge the momentum.
 - Focus on what they will accomplish TODAY.
 - No emojis. Serious, stoic tone.
             `;
@@ -122,10 +133,14 @@ Constraints:
 You are a Stoic Accountability Partner. The user has these active contracts:
 ${contractContext}
 
+Yesterday's Journal Entries:
+${journalContext || 'No entries yesterday.'}
+
 Task: Write a MORNING briefing for their dashboard.
-1. Acknowledge their current streaks.
-2. Set their intention for today.
-3. Give a stoic reflection on discipline.
+1. If they logged wins yesterday, acknowledge that momentum.
+2. Acknowledge their current streaks.
+3. Set their intention for today.
+4. Give a stoic reflection on discipline.
 
 Constraint: 3-4 sentences. No emojis. Serious, philosophical tone.
             `;
