@@ -604,6 +604,101 @@ exports.auditContract = onCall({
     }
 });
 
+// Data Migration: Copy all data from one UID to another
+exports.migrateUserData = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('failed-precondition', 'Authentication required.');
+    }
+
+    const { sourceUid, targetUid } = request.data;
+
+    if (!sourceUid || !targetUid) {
+        throw new HttpsError('invalid-argument', 'Both sourceUid and targetUid are required.');
+    }
+
+    logger.info(`Starting migration from ${sourceUid} to ${targetUid}`);
+
+    const results = {
+        contracts: 0,
+        logs: 0,
+        journals: 0,
+        errors: []
+    };
+
+    try {
+        // 1. Copy all contracts
+        const contractsSnap = await db.collection('users').doc(sourceUid).collection('contracts').get();
+
+        for (const contractDoc of contractsSnap.docs) {
+            try {
+                const contractData = contractDoc.data();
+                const newContractRef = db.collection('users').doc(targetUid).collection('contracts').doc(contractDoc.id);
+
+                await newContractRef.set({
+                    ...contractData,
+                    userId: targetUid,  // Update to new user ID
+                    migratedFrom: sourceUid,
+                    migratedAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                results.contracts++;
+
+                // Copy journal entries for this contract
+                const journalSnap = await db.collection('users').doc(sourceUid)
+                    .collection('contracts').doc(contractDoc.id).collection('journal').get();
+
+                for (const journalDoc of journalSnap.docs) {
+                    try {
+                        const journalData = journalDoc.data();
+                        await db.collection('users').doc(targetUid)
+                            .collection('contracts').doc(contractDoc.id)
+                            .collection('journal').doc(journalDoc.id)
+                            .set(journalData);
+                        results.journals++;
+                    } catch (e) {
+                        results.errors.push(`Journal ${journalDoc.id}: ${e.message}`);
+                    }
+                }
+
+            } catch (e) {
+                results.errors.push(`Contract ${contractDoc.id}: ${e.message}`);
+            }
+        }
+
+        // 2. Copy all logs
+        const logsSnap = await db.collection('users').doc(sourceUid).collection('logs').get();
+
+        for (const logDoc of logsSnap.docs) {
+            try {
+                const logData = logDoc.data();
+                await db.collection('users').doc(targetUid).collection('logs').doc(logDoc.id).set(logData);
+                results.logs++;
+            } catch (e) {
+                results.errors.push(`Log ${logDoc.id}: ${e.message}`);
+            }
+        }
+
+        // 3. Copy user document data (settings, briefings, etc.)
+        const sourceUserDoc = await db.collection('users').doc(sourceUid).get();
+        if (sourceUserDoc.exists) {
+            const userData = sourceUserDoc.data();
+            // Don't overwrite fcmToken or auth-related fields
+            const { fcmToken: _fcmToken, ...restData } = userData;
+            await db.collection('users').doc(targetUid).set({
+                ...restData,
+                migratedFrom: sourceUid,
+                migratedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        }
+
+        logger.info(`Migration complete: ${JSON.stringify(results)}`);
+        return results;
+
+    } catch (e) {
+        logger.error('Migration failed:', e);
+        throw new HttpsError('internal', `Migration failed: ${e.message}`);
+    }
+});
+
 exports.judgeViolation = onCall({
     secrets: [geminiApiKey]
 }, async (request) => {
