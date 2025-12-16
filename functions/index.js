@@ -737,3 +737,45 @@ exports.judgeViolation = onCall({
         throw new HttpsError('internal', `Judging failed: ${e.message}`);
     }
 });
+
+// DIAGNOSTIC: Check what data exists for a user
+const { onRequest } = require("firebase-functions/v2/https");
+
+exports.checkUserData = onRequest(async (req, res) => {
+    const uid = req.query.uid;
+
+    if (!uid) {
+        res.status(400).json({ error: 'Missing uid parameter' });
+        return;
+    }
+
+    try {
+        // Check contracts
+        const contractsSnap = await db.collection('users').doc(uid).collection('contracts').get();
+        const contracts = contractsSnap.docs.map(d => ({ id: d.id, title: d.data().title, status: d.data().status }));
+
+        // Check logs
+        const logsSnap = await db.collection('users').doc(uid).collection('logs').get();
+        const logsCount = logsSnap.size;
+
+        // Check user doc
+        const userDoc = await db.collection('users').doc(uid).get();
+        const userExists = userDoc.exists;
+        const userData = userExists ? {
+            migratedFrom: userDoc.data()?.migratedFrom,
+            hasFcmToken: !!userDoc.data()?.fcmToken,
+            hasBriefing: !!userDoc.data()?.dailyBriefing
+        } : null;
+
+        res.json({
+            uid,
+            userDocExists: userExists,
+            userData,
+            contractsCount: contracts.length,
+            contracts,
+            logsCount
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});

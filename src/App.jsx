@@ -776,8 +776,11 @@ export default function Laosfactos() {
     const contractsRef = collection(db, 'users', user.uid, 'contracts');
     const q = query(contractsRef);
 
+    console.log('[DEBUG] Setting up contracts listener for UID:', user.uid);
+
     const unsubContracts = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      console.log('[DEBUG] Contracts loaded:', data.length, 'contracts', data.map(c => c.title));
       // Sort logic handled in views
       setContracts(data);
       setContractsLoading(false);
@@ -1008,9 +1011,8 @@ export default function Laosfactos() {
       }
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
-        // VAPID key is often required. If you see an error about missing VAPID key, generating a pair in Firebase Console -> Cloud Messaging is needed.
-        // Pass it as { vapidKey: 'YOUR_KEY' }
-        const token = await getToken(messaging);
+        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+        const token = await getToken(messaging, { vapidKey });
         if (token && user) {
           await setDoc(doc(db, 'users', user.uid), { fcmToken: token }, { merge: true });
           alert("Notifications Enabled! You'll receive your daily briefing tomorrow.");
@@ -1020,7 +1022,7 @@ export default function Laosfactos() {
       }
     } catch (e) {
       console.error("Notification permission error:", e);
-      alert("Error enabling notifications. Check console for details (often VAPID key missing).");
+      alert("Error enabling notifications: " + e.message);
     }
   };
 
