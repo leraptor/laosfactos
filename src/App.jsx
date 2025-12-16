@@ -641,10 +641,37 @@ function VictoryModal({ contract, onClose, onFinalize }) {
   );
 }
 
-// --- Migration Modal ---
-function MigrationModal({ currentUid, onClose, onMigrate, migrationStatus }) {
-  const [sourceUid, setSourceUid] = useState('skzGn0ryLXTNxPm9FYbixsbWLGT2'); // Pre-filled with known old UID
+// --- QA Tools Panel ---
+function QAToolsPanel({ currentUid, contracts, contractsLoading, onClose, onMigrate, migrationStatus }) {
+  const [sourceUid, setSourceUid] = useState('skzGn0ryLXTNxPm9FYbixsbWLGT2');
   const [isLoading, setIsLoading] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [activeTab, setActiveTab] = useState('info'); // 'info', 'logs', 'migrate'
+
+  // Capture console logs
+  useEffect(() => {
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+
+    const captureLog = (type, ...args) => {
+      const message = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+      setLogs(prev => [...prev.slice(-50), { type, message, time: new Date().toLocaleTimeString() }]);
+    };
+
+    console.log = (...args) => { captureLog('log', ...args); originalLog.apply(console, args); };
+    console.error = (...args) => { captureLog('error', ...args); originalError.apply(console, args); };
+    console.warn = (...args) => { captureLog('warn', ...args); originalWarn.apply(console, args); };
+
+    // Trigger a debug log
+    console.log('[QA] Panel opened, contracts in state:', contracts.length);
+
+    return () => {
+      console.log = originalLog;
+      console.error = originalError;
+      console.warn = originalWarn;
+    };
+  }, []);
 
   const handleMigrate = async () => {
     if (!sourceUid.trim()) return;
@@ -653,71 +680,139 @@ function MigrationModal({ currentUid, onClose, onMigrate, migrationStatus }) {
     setIsLoading(false);
   };
 
+  const copyLogs = () => {
+    const text = logs.map(l => `[${l.time}] [${l.type.toUpperCase()}] ${l.message}`).join('\n');
+    navigator.clipboard?.writeText(text) || alert(text);
+    alert('Logs copied!');
+  };
+
+  const refreshPage = () => window.location.reload();
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm p-6 flex items-center justify-center">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-6 space-y-6 animate-in zoom-in-95">
-        <div className="flex justify-between items-start">
-          <div className="flex items-center gap-2 text-emerald-400 font-bold text-lg uppercase tracking-widest">
-            <RefreshCcw className="w-6 h-6" /> Data Recovery
+    <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm p-4 flex items-center justify-center overflow-y-auto">
+      <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-lg shadow-2xl animate-in zoom-in-95">
+        {/* Header */}
+        <div className="flex justify-between items-center p-4 border-b border-slate-800">
+          <div className="flex items-center gap-2 text-amber-400 font-bold text-lg uppercase tracking-widest">
+            <Activity className="w-6 h-6" /> QA Tools
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white"><XCircle className="w-5 h-5" /></button>
         </div>
 
-        <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
-          <div className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-1">Your Current User ID</div>
-          <div className="text-sm text-emerald-400 font-mono break-all select-all">{currentUid}</div>
+        {/* Tabs */}
+        <div className="flex border-b border-slate-800">
+          {['info', 'logs', 'migrate'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`flex-1 py-2 text-xs uppercase tracking-wider font-bold transition-colors ${activeTab === tab ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'
+                }`}
+            >
+              {tab === 'info' ? '📊 Status' : tab === 'logs' ? '📝 Logs' : '🔄 Migrate'}
+            </button>
+          ))}
         </div>
 
-        <div className="space-y-2">
-          <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Source User ID (to copy from)</label>
-          <input
-            type="text"
-            value={sourceUid}
-            onChange={e => setSourceUid(e.target.value)}
-            placeholder="Enter the old user ID to recover data from"
-            className="bg-slate-900 border border-slate-700 rounded-md p-3 text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-slate-600 w-full font-mono text-sm"
-          />
+        {/* Content */}
+        <div className="p-4 max-h-[60vh] overflow-y-auto">
+          {activeTab === 'info' && (
+            <div className="space-y-4">
+              <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                <div className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-1">Current User ID</div>
+                <div className="text-sm text-emerald-400 font-mono break-all select-all">{currentUid || 'Not authenticated'}</div>
+              </div>
+
+              <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                <div className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-1">Contracts Status</div>
+                <div className="text-sm text-white">
+                  {contractsLoading ? (
+                    <span className="text-amber-400">⏳ Loading...</span>
+                  ) : (
+                    <>
+                      <span className="text-emerald-400">{contracts.length} contracts in state</span>
+                      {contracts.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {contracts.map(c => (
+                            <div key={c.id} className="text-xs text-slate-400">
+                              • {c.title} <span className={c.status === 'active' ? 'text-emerald-400' : 'text-slate-600'}>({c.status})</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                <div className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-1">Firebase Config</div>
+                <div className="text-xs text-slate-400 font-mono">
+                  Project: {import.meta.env.VITE_FIREBASE_PROJECT_ID || 'N/A'}
+                </div>
+              </div>
+
+              <Button onClick={refreshPage} variant="secondary" className="w-full">
+                🔄 Force Refresh
+              </Button>
+            </div>
+          )}
+
+          {activeTab === 'logs' && (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">{logs.length} log entries</span>
+                <Button onClick={copyLogs} variant="ghost" className="text-xs py-1 px-2">
+                  📋 Copy All
+                </Button>
+              </div>
+              <div className="bg-slate-950 border border-slate-800 rounded-lg p-2 max-h-64 overflow-y-auto font-mono text-xs">
+                {logs.length === 0 ? (
+                  <div className="text-slate-600 text-center py-4">No logs captured yet. Interact with the app to generate logs.</div>
+                ) : (
+                  logs.map((log, i) => (
+                    <div key={i} className={`py-1 border-b border-slate-900 ${log.type === 'error' ? 'text-rose-400' :
+                      log.type === 'warn' ? 'text-amber-400' : 'text-slate-300'
+                      }`}>
+                      <span className="text-slate-600">[{log.time}]</span> {log.message}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'migrate' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Source UID (copy from)</label>
+                <input
+                  type="text"
+                  value={sourceUid}
+                  onChange={e => setSourceUid(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 rounded-md p-3 text-slate-100 focus:outline-none focus:border-indigo-500 w-full font-mono text-sm"
+                />
+              </div>
+
+              {migrationStatus && (
+                <div className={`p-3 rounded-lg border ${migrationStatus.success ? 'bg-emerald-950/50 border-emerald-900 text-emerald-400' : 'bg-rose-950/50 border-rose-900 text-rose-400'}`}>
+                  {migrationStatus.success
+                    ? `✅ Migrated: ${migrationStatus.contracts} contracts, ${migrationStatus.logs} logs`
+                    : `❌ Error: ${migrationStatus.error}`
+                  }
+                </div>
+              )}
+
+              <Button
+                onClick={handleMigrate}
+                disabled={isLoading || !sourceUid.trim()}
+                variant="ai"
+                className="w-full"
+              >
+                {isLoading ? "Migrating..." : "Run Migration"}
+              </Button>
+            </div>
+          )}
         </div>
-
-        {migrationStatus && (
-          <div className={`p-4 rounded-lg border ${migrationStatus.success ? 'bg-emerald-950/50 border-emerald-900' : 'bg-rose-950/50 border-rose-900'}`}>
-            {migrationStatus.success ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-emerald-400 font-bold">
-                  <CheckCircle2 className="w-5 h-5" /> Migration Complete!
-                </div>
-                <div className="text-sm text-slate-300">
-                  Copied: {migrationStatus.contracts} contracts, {migrationStatus.logs} logs, {migrationStatus.journals} journal entries
-                </div>
-                <div className="text-xs text-slate-500">Refresh the page to see your data.</div>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-rose-400 font-bold">
-                  <AlertOctagon className="w-5 h-5" /> Migration Failed
-                </div>
-                <div className="text-sm text-rose-300">{migrationStatus.error}</div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {!migrationStatus?.success && (
-          <Button
-            onClick={handleMigrate}
-            disabled={isLoading || !sourceUid.trim() || sourceUid === currentUid}
-            variant="ai"
-            className="w-full"
-          >
-            {isLoading ? "Migrating..." : "🔄 Recover My Data"}
-          </Button>
-        )}
-
-        {migrationStatus?.success && (
-          <Button onClick={() => window.location.reload()} variant="primary" className="w-full">
-            Refresh App
-          </Button>
-        )}
       </div>
     </div>
   );
@@ -1165,9 +1260,11 @@ export default function Laosfactos() {
               />
             )}
 
-            {showMigration && ( // 6. Render MigrationModal
-              <MigrationModal
+            {showMigration && ( // 6. Render QAToolsPanel
+              <QAToolsPanel
                 currentUid={user?.uid}
+                contracts={contracts}
+                contractsLoading={contractsLoading}
                 onClose={() => setShowMigration(false)}
                 onMigrate={handleMigration}
                 migrationStatus={migrationStatus}
