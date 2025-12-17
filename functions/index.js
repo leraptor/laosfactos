@@ -12,18 +12,20 @@ const { defineSecret } = require('firebase-functions/params');
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 
 
-// Morning Briefing: Set intentions for the day (08:00)
+// Morning Briefing: Set intentions for the day (08:00 Paris time)
 exports.sendMorningBriefing = onSchedule({
-    schedule: "every day 08:00",
+    schedule: "0 8 * * *",
+    timeZone: "Europe/Paris",
     secrets: [geminiApiKey]
 }, async (event) => {
     logger.info("Starting Morning Briefing Batch...");
     await processBriefingBatch('morning');
 });
 
-// Evening Briefing: Reflect on the day (18:00)
+// Evening Briefing: Reflect on the day (18:00 Paris time)
 exports.sendEveningBriefing = onSchedule({
-    schedule: "every day 18:00",
+    schedule: "0 18 * * *",
+    timeZone: "Europe/Paris",
     secrets: [geminiApiKey]
 }, async (event) => {
     logger.info("Starting Evening Briefing Batch...");
@@ -761,21 +763,69 @@ exports.checkUserData = onRequest(async (req, res) => {
         // Check user doc
         const userDoc = await db.collection('users').doc(uid).get();
         const userExists = userDoc.exists;
-        const userData = userExists ? {
-            migratedFrom: userDoc.data()?.migratedFrom,
-            hasFcmToken: !!userDoc.data()?.fcmToken,
-            hasBriefing: !!userDoc.data()?.dailyBriefing
-        } : null;
+        const fullData = userDoc.data() || {};
+
+        // Get detailed briefing info
+        let briefingInfo = null;
+        if (fullData.dailyBriefing) {
+            briefingInfo = {
+                morning: fullData.dailyBriefing.morning ? {
+                    text: fullData.dailyBriefing.morning.text?.substring(0, 100) + '...',
+                    timestamp: fullData.dailyBriefing.morning.timestamp?.toDate?.()?.toISOString() || 'N/A',
+                    archived: fullData.dailyBriefing.morning.archived
+                } : null,
+                evening: fullData.dailyBriefing.evening ? {
+                    text: fullData.dailyBriefing.evening.text?.substring(0, 100) + '...',
+                    timestamp: fullData.dailyBriefing.evening.timestamp?.toDate?.()?.toISOString() || 'N/A',
+                    archived: fullData.dailyBriefing.evening.archived
+                } : null
+            };
+        }
 
         res.json({
             uid,
             userDocExists: userExists,
-            userData,
+            hasFcmToken: !!fullData.fcmToken,
+            briefingInfo,
             contractsCount: contracts.length,
             contracts,
-            logsCount
+            logsCount,
+            serverTime: new Date().toISOString()
         });
     } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Manual trigger for testing briefings
+exports.triggerBriefing = onRequest({
+    secrets: [geminiApiKey]
+}, async (req, res) => {
+    const uid = req.query.uid;
+    const timeOfDay = req.query.time || 'morning'; // 'morning' or 'evening'
+
+    if (!uid) {
+        res.status(400).json({ error: 'Missing uid parameter' });
+        return;
+    }
+
+    logger.info(`Manual trigger: ${timeOfDay} briefing for ${uid}`);
+
+    try {
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (!userDoc.exists) {
+            res.status(404).json({ error: 'User not found' });
+            return;
+        }
+
+        const genAI = new GoogleGenerativeAI(geminiApiKey.value());
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+        await processUserBriefing(userDoc, model, timeOfDay);
+
+        res.json({ success: true, message: `${timeOfDay} briefing sent to ${uid}` });
+    } catch (e) {
+        logger.error('Manual trigger error:', e);
         res.status(500).json({ error: e.message });
     }
 });
