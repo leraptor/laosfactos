@@ -41,7 +41,7 @@ async function processBriefingBatch(timeOfDay) {
     }
 
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
     const promises = [];
     usersSnapshot.forEach(userDoc => {
@@ -439,7 +439,7 @@ exports.onJournalEntryCreated = onDocumentCreated({
 
         // 3. Build the AI prompt
         const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
         const recentContext = contextEntries.length > 0
             ? contextEntries.map((t, i) => `${i + 1}. "${t}"`).join('\n')
@@ -505,7 +505,7 @@ exports.consultOracle = onCall({
     // 2. Call Gemini Securely
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
     const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
+        model: "gemini-3-flash-preview",
         generationConfig: { responseMimeType: "application/json" }
     });
 
@@ -553,7 +553,7 @@ exports.draftContract = onCall({
 
     const { userGoal } = request.data;
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } });
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview", generationConfig: { responseMimeType: "application/json" } });
 
     const prompt = `
     You are a Stoic Contract Lawyer.
@@ -582,7 +582,7 @@ exports.auditContract = onCall({
 
     const { contractData } = request.data;
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } });
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview", generationConfig: { responseMimeType: "application/json" } });
 
     const prompt = `
     You are a Devil's Advocate lawyer. Review this personal contract.
@@ -710,7 +710,7 @@ exports.judgeViolation = onCall({
 
     const { reason, story, decision, contractTitle, contractBehavior } = request.data;
     const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } });
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview", generationConfig: { responseMimeType: "application/json" } });
 
     const prompt = `
     You are a strict, stoic judge.
@@ -819,7 +819,7 @@ exports.triggerBriefing = onRequest({
         }
 
         const genAI = new GoogleGenerativeAI(geminiApiKey.value());
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
 
         await processUserBriefing(userDoc, model, timeOfDay);
 
