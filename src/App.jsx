@@ -2625,6 +2625,14 @@ function JournalModal({ contract, user, onClose }) {
   const [logs, setLogs] = useState([]);
   const [newLog, setNewLog] = useState('');
   const [loading, setLoading] = useState(true);
+  const logsEndRef = useRef(null);
+
+  // Scroll to bottom when logs change (like WhatsApp)
+  useEffect(() => {
+    if (!loading && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, loading]);
 
   useEffect(() => {
     if (!user || !contract) return;
@@ -2747,6 +2755,8 @@ function JournalModal({ contract, user, onClose }) {
               );
             })
           )}
+          {/* Scroll anchor for auto-scroll to bottom */}
+          <div ref={logsEndRef} />
         </div>
 
         {/* Input Area */}
