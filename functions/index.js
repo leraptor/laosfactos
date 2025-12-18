@@ -740,6 +740,148 @@ exports.judgeViolation = onCall({
     }
 });
 
+// Temptation SOS: Provide immediate coaching when user is tempted
+exports.coachTemptation = onCall({
+    secrets: [geminiApiKey]
+}, async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('failed-precondition', 'Authentication required.');
+    }
+
+    const uid = request.auth.uid;
+    const { contractId, context } = request.data;
+
+    if (!contractId) {
+        throw new HttpsError('invalid-argument', 'contractId is required.');
+    }
+
+    try {
+        // 1. Get contract details
+        const contractRef = db.collection('users').doc(uid).collection('contracts').doc(contractId);
+        const contractDoc = await contractRef.get();
+
+        if (!contractDoc.exists) {
+            throw new HttpsError('not-found', 'Contract not found.');
+        }
+
+        const contract = contractDoc.data();
+        const resistedCount = contract.resistedCount || 0;
+
+        // 2. Get recent temptations for context (last 3)
+        const recentTemptationsSnap = await contractRef.collection('temptations')
+            .orderBy('createdAt', 'desc')
+            .limit(3)
+            .get();
+
+        let recentContext = '';
+        recentTemptationsSnap.forEach(doc => {
+            const t = doc.data();
+            if (t.outcome === 'resisted') {
+                recentContext += `- Previously resisted: "${t.context || 'unspecified temptation'}"\n`;
+            }
+        });
+
+        // 3. Build coaching prompt
+        const genAI = new GoogleGenerativeAI(geminiApiKey.value());
+        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+
+        const prompt = `You are an emergency accountability coach. The user is experiencing a temptation RIGHT NOW.
+
+CONTRACT: "${contract.title}"
+GOAL: "${contract.behavior}"
+CURRENT STREAK: ${contract.streak || 0} days
+TIMES RESISTED BEFORE: ${resistedCount}
+
+${recentContext ? `RECENT VICTORIES:\n${recentContext}` : ''}
+
+USER'S CURRENT TEMPTATION: "${context || 'Not specified'}"
+
+Instructions:
+- This is URGENT. Be direct and action-oriented.
+- Remind them of their streak and past victories if applicable.
+- Give ONE specific action to do RIGHT NOW (e.g., "Drink water", "Walk outside", "Text a friend").
+- Use behavioral science: cravings pass in ~15 minutes.
+- Keep it to 2-3 sentences. No fluff. No emojis.
+- End with a power phrase.
+
+Your response:`;
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const coachingText = response.text().trim();
+
+        // 4. Save temptation record
+        const temptationRef = contractRef.collection('temptations').doc();
+        await temptationRef.set({
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            context: context || null,
+            aiResponse: coachingText,
+            outcome: 'pending' // Will be updated when user reports outcome
+        });
+
+        // 5. Update last temptation timestamp on contract
+        await contractRef.update({
+            lastTemptation: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        logger.info(`SOS coaching for ${uid} - contract ${contractId}: "${coachingText.substring(0, 50)}..."`);
+
+        return {
+            temptationId: temptationRef.id,
+            coaching: coachingText,
+            resistedCount: resistedCount
+        };
+
+    } catch (e) {
+        logger.error('Coach Temptation Error:', e);
+        throw new HttpsError('internal', `Coaching failed: ${e.message}`);
+    }
+});
+
+// Mark temptation outcome (resisted or relapsed)
+exports.markTemptationOutcome = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('failed-precondition', 'Authentication required.');
+    }
+
+    const uid = request.auth.uid;
+    const { contractId, temptationId, outcome } = request.data;
+
+    if (!contractId || !temptationId || !outcome) {
+        throw new HttpsError('invalid-argument', 'contractId, temptationId, and outcome are required.');
+    }
+
+    if (!['resisted', 'relapsed'].includes(outcome)) {
+        throw new HttpsError('invalid-argument', 'outcome must be "resisted" or "relapsed".');
+    }
+
+    try {
+        const contractRef = db.collection('users').doc(uid).collection('contracts').doc(contractId);
+        const temptationRef = contractRef.collection('temptations').doc(temptationId);
+
+        // Update temptation outcome
+        await temptationRef.update({
+            outcome: outcome,
+            resolvedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // If resisted, increment resistedCount
+        if (outcome === 'resisted') {
+            await contractRef.update({
+                resistedCount: admin.firestore.FieldValue.increment(1)
+            });
+        }
+
+        logger.info(`Temptation ${temptationId} outcome: ${outcome}`);
+
+        return { success: true };
+
+    } catch (e) {
+        logger.error('Mark Temptation Outcome Error:', e);
+        throw new HttpsError('internal', `Failed to update outcome: ${e.message}`);
+    }
+});
+
 // DIAGNOSTIC: Check what data exists for a user
 const { onRequest } = require("firebase-functions/v2/https");
 

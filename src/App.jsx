@@ -159,6 +159,30 @@ async function callAIDrafting(userGoal) {
   }
 }
 
+// SOS Coaching - Get immediate help when tempted
+async function callSOSCoach(contractId, context) {
+  try {
+    const coachTemptation = httpsCallable(functions, 'coachTemptation');
+    const result = await coachTemptation({ contractId, context });
+    return result.data;
+  } catch (e) {
+    console.error("SOS Coach Error:", e);
+    return { coaching: "Take a deep breath. This craving will pass. Step away for 5 minutes.", temptationId: null };
+  }
+}
+
+// Mark SOS outcome (resisted or relapsed)
+async function markSOSOutcome(contractId, temptationId, outcome) {
+  try {
+    const markOutcome = httpsCallable(functions, 'markTemptationOutcome');
+    await markOutcome({ contractId, temptationId, outcome });
+    return true;
+  } catch (e) {
+    console.error("Mark Outcome Error:", e);
+    return false;
+  }
+}
+
 // --- Firebase Init ---
 
 // 1. PREVIEW CONFIG (Use this here in the chat)
@@ -559,6 +583,118 @@ function OracleModal({ contract, onClose }) {
   );
 }
 
+// --- SOS Modal (Temptation Intervention) ---
+function SOSModal({ contract, onClose, onOutcome }) {
+  const [context, setContext] = useState('');
+  const [stage, setStage] = useState('input'); // 'input', 'loading', 'coaching'
+  const [coaching, setCoaching] = useState('');
+  const [temptationId, setTemptationId] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleGetHelp = async () => {
+    setStage('loading');
+    const result = await callSOSCoach(contract.id, context);
+    setCoaching(result.coaching);
+    setTemptationId(result.temptationId);
+    setStage('coaching');
+  };
+
+  const handleOutcome = async (outcome) => {
+    setIsSubmitting(true);
+    if (temptationId) {
+      await markSOSOutcome(contract.id, temptationId, outcome);
+    }
+    onOutcome(outcome);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm p-6 flex items-center justify-center">
+      <div className="w-full max-w-md bg-slate-900 border border-rose-900/50 rounded-lg shadow-2xl p-6 space-y-6 animate-in zoom-in-95">
+
+        {/* Header */}
+        <div className="flex justify-between items-start">
+          <div className="flex items-center gap-2 text-rose-400 font-bold text-lg uppercase tracking-widest">
+            <AlertTriangle className="w-6 h-6" /> SOS Mode
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-white">
+            <XCircle className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Contract Info */}
+        <div className="bg-slate-950/50 p-3 rounded border border-slate-800">
+          <h3 className="font-bold text-slate-200 text-sm"><SafeRender content={contract.title} /></h3>
+          <p className="text-xs text-slate-500 font-mono mt-1 line-clamp-2"><SafeRender content={contract.behavior} /></p>
+        </div>
+
+        {/* Input Stage */}
+        {stage === 'input' && (
+          <div className="space-y-4">
+            <TextArea
+              label="What's tempting you? (optional)"
+              placeholder="e.g. I'm at a party and there's pizza..."
+              value={context}
+              onChange={e => setContext(e.target.value)}
+              rows={2}
+            />
+            <Button onClick={handleGetHelp} className="w-full" variant="danger">
+              <AlertTriangle className="w-4 h-4" /> Get Help Now
+            </Button>
+          </div>
+        )}
+
+        {/* Loading Stage */}
+        {stage === 'loading' && (
+          <div className="text-center py-8">
+            <div className="animate-pulse text-rose-400 font-bold uppercase tracking-widest text-sm">
+              Coach is coming...
+            </div>
+            <p className="text-slate-500 text-xs mt-2">Hold on. Help is on the way.</p>
+          </div>
+        )}
+
+        {/* Coaching Stage */}
+        {stage === 'coaching' && (
+          <div className="space-y-4">
+            <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs uppercase tracking-widest mb-2">
+                <Bot className="w-4 h-4" /> Coach
+              </div>
+              <p className="text-slate-200 text-sm leading-relaxed">
+                <SafeRender content={coaching} />
+              </p>
+            </div>
+
+            <div className="text-center text-slate-500 text-xs">
+              What happened?
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => handleOutcome('resisted')}
+                disabled={isSubmitting}
+                className="flex items-center justify-center gap-2 p-3 rounded-lg bg-emerald-950/50 border border-emerald-800 text-emerald-400 hover:bg-emerald-900/50 hover:border-emerald-600 transition-colors disabled:opacity-50"
+              >
+                <Shield className="w-5 h-5" />
+                <span className="font-bold text-sm">I Resisted</span>
+              </button>
+              <button
+                onClick={() => handleOutcome('relapsed')}
+                disabled={isSubmitting}
+                className="flex items-center justify-center gap-2 p-3 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-400 hover:bg-slate-700/50 hover:border-slate-600 transition-colors disabled:opacity-50"
+              >
+                <XCircle className="w-5 h-5" />
+                <span className="font-bold text-sm">I Gave In</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // --- Victory Modal ---
 function VictoryModal({ contract, onClose, onFinalize }) {
   useEffect(() => {
@@ -829,6 +965,7 @@ export default function Laosfactos() {
   const [activeViolationContract, setActiveViolationContract] = useState(null);
   const [activeOracleContract, setActiveOracleContract] = useState(null); // New Oracle State
   const [activeJournalContract, setActiveJournalContract] = useState(null); // New Journal State
+  const [activeSOSContract, setActiveSOSContract] = useState(null); // SOS Temptation State
   const [victoryContract, setVictoryContract] = useState(null); // New Victory State
   const [contractsLoading, setContractsLoading] = useState(true);
   const [dailyBriefing, setDailyBriefing] = useState(null); // Daily Briefing State
@@ -1207,6 +1344,7 @@ export default function Laosfactos() {
                   setView('violation');
                 }}
                 onConsultOracle={(contract) => setActiveOracleContract(contract)} // Trigger Oracle
+                onSOS={(contract) => setActiveSOSContract(contract)} // Trigger SOS
                 onDelete={handleDeleteContract}
                 onComplete={handleCompleteContract}
                 onCreate={() => setView('create')}
@@ -1249,6 +1387,17 @@ export default function Laosfactos() {
                 contract={activeJournalContract}
                 user={user}
                 onClose={() => setActiveJournalContract(null)}
+              />
+            )}
+
+            {activeSOSContract && (
+              <SOSModal
+                contract={activeSOSContract}
+                onClose={() => setActiveSOSContract(null)}
+                onOutcome={(outcome) => {
+                  console.log(`SOS outcome for ${activeSOSContract.title}: ${outcome}`);
+                  // Contract resistedCount is updated by backend, Firestore listener will refresh
+                }}
               />
             )}
 
@@ -1306,7 +1455,7 @@ export default function Laosfactos() {
 
 // --- Sub-Components ---
 
-function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onComplete, onCreate, onConsultOracle, onDelete, onOpenJournal, loading, contractsLoading, dailyBriefing, onArchiveBriefing }) {
+function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onComplete, onCreate, onConsultOracle, onDelete, onOpenJournal, onSOS, loading, contractsLoading, dailyBriefing, onArchiveBriefing }) {
   const activeContracts = contracts.filter(c => c.status === 'active');
   const pausedContracts = contracts.filter(c => c.status === 'paused');
 
@@ -1441,6 +1590,7 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
             onDelete={onDelete}
             onComplete={onComplete}
             onOpenJournal={onOpenJournal}
+            onSOS={onSOS}
           />
         ))}
       </div>
@@ -1460,7 +1610,7 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
   );
 }
 
-function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onConsultOracle, onDelete, onComplete, onOpenJournal }) {
+function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onConsultOracle, onDelete, onComplete, onOpenJournal, onSOS }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -1553,6 +1703,14 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
             </div>
 
             <button
+              onClick={(e) => { e.stopPropagation(); onSOS(contract); }}
+              className="bg-rose-950/50 p-2 rounded border border-rose-800/50 hover:border-rose-500 hover:bg-rose-900/50 transition-colors text-rose-400 hover:text-rose-300"
+              title="SOS - I'm tempted"
+            >
+              <AlertTriangle className="w-4 h-4" />
+            </button>
+
+            <button
               onClick={(e) => { e.stopPropagation(); onConsultOracle(contract); }}
               className="bg-slate-950 p-2 rounded border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-900 transition-colors text-slate-400 hover:text-indigo-400"
               title="Consult the Oracle"
@@ -1614,6 +1772,14 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
                 Ex: <SafeRender content={ex} />
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Resisted Count Badge */}
+        {contract.resistedCount > 0 && (
+          <div className="flex items-center gap-1.5 text-emerald-400">
+            <Shield className="w-3 h-3" />
+            <span className="text-[10px] font-bold">Resisted {contract.resistedCount}x</span>
           </div>
         )}
 
