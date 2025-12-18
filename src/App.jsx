@@ -1704,7 +1704,7 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
 
             <button
               onClick={(e) => { e.stopPropagation(); onSOS(contract); }}
-              className="bg-rose-950/50 p-2 rounded border border-rose-800/50 hover:border-rose-500 hover:bg-rose-900/50 transition-colors text-rose-400 hover:text-rose-300"
+              className="bg-slate-950 p-2 rounded border border-amber-900/30 hover:border-amber-500/50 hover:bg-amber-950/30 transition-colors text-amber-600/70 hover:text-amber-400"
               title="SOS - I'm tempted"
             >
               <AlertTriangle className="w-4 h-4" />
