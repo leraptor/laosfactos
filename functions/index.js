@@ -971,3 +971,43 @@ exports.triggerBriefing = onRequest({
         res.status(500).json({ error: e.message });
     }
 });
+
+exports.testNotification = onCall(async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'User must be logged in');
+    }
+    const uid = request.auth.uid;
+
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (!userDoc.exists) {
+        throw new HttpsError('not-found', 'User profile not found');
+    }
+
+    const userData = userDoc.data();
+    const fcmToken = userData.fcmToken;
+
+    if (!fcmToken) {
+        throw new HttpsError('failed-precondition', 'No FCM token registered for user');
+    }
+
+    try {
+        const messageId = await admin.messaging().send({
+            token: fcmToken,
+            notification: {
+                title: "QA Verification",
+                body: "This is a test notification from the server. Your configuration is correct."
+            },
+            android: { priority: "high" },
+            webpush: {
+                headers: { Urgency: "high" },
+                notification: { icon: "/vite.svg" }
+            }
+        });
+
+        logger.info(`Test notification sent to ${uid}: ${messageId}`);
+        return { success: true, messageId };
+    } catch (error) {
+        logger.error("Error sending test notification", error);
+        throw new HttpsError('internal', 'Failed to send notification: ' + error.message);
+    }
+});

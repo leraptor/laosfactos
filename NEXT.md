@@ -1,4 +1,6 @@
-## In Progress
+## Last Context
+
+- I'm trying 
 
 ## Next Steps
 - Build an AI App to help you execute on Sami Board meeting

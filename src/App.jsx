@@ -22,6 +22,7 @@ import {
   writeBatch,
   setDoc
 } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
   Shield,
   AlertTriangle,
@@ -60,9 +61,10 @@ import {
   Book,
   Bell,
   RefreshCcw,
-
+  Camera
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { saveImage, getImage } from './utils/idb';
 
 // --- Utility Functions ---
 
@@ -207,6 +209,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const messaging = getMessaging(app);
 const functions = getFunctions(app);
+const storage = getStorage(app);
 
 // --- Constants ---
 const MAX_ACTIVE_CONTRACTS = 10;
@@ -695,6 +698,102 @@ function SOSModal({ contract, onClose, onOutcome }) {
   );
 }
 
+// --- Morning Intent Lock-In Modal ---
+function MorningLockIn({ contracts, onLockIn }) {
+  const [isLocked, setIsLocked] = useState(false);
+
+  // Show only top 3 cards visually to avoid clutter, but count all
+  const displayContracts = contracts.slice(0, 3);
+
+  const handleLock = () => {
+    setIsLocked(true);
+    // Trigger confetti
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ['#eab308', '#ffffff'] // Gold/White
+    });
+    // Wait for animation then close/complete
+    setTimeout(() => {
+      onLockIn();
+    }, 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-slate-950/98 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-700">
+      {!isLocked ? (
+        <>
+          <div className="mb-8 space-y-2 relative z-10">
+            <h2 className="text-3xl font-black text-slate-100 tracking-tighter uppercase">
+              Morning Protocol
+            </h2>
+            <p className="text-slate-400 font-serif italic">
+              "The cost of freedom is eternal vigilance."
+            </p>
+          </div>
+
+          {/* Stack of Contracts */}
+          <div className="relative w-full max-w-[280px] h-48 mb-16 flex items-center justify-center">
+            {displayContracts.map((c, i) => (
+              <div
+                key={c.id}
+                className="absolute w-full bg-slate-900 border border-slate-700 rounded-xl p-4 shadow-xl transform transition-all duration-500"
+                style={{
+                  top: i * 12,
+                  scale: 1 - i * 0.05,
+                  zIndex: displayContracts.length - i,
+                  opacity: 1 - i * 0.2,
+                  // filter: 'blur(' + (i * 0.5) + 'px)'
+                }}
+              >
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-[10px] uppercase text-emerald-500 font-bold tracking-wider flex items-center gap-1">
+                    <Activity className="w-3 h-3" /> Active
+                  </span>
+                  <div className="text-[10px] text-slate-500 font-mono">
+                    Streak: {c.streak || 0}
+                  </div>
+                </div>
+                <h3 className="text-lg font-bold text-slate-200 truncate text-left"><SafeRender content={c.title} /></h3>
+              </div>
+            ))}
+            {contracts.length > 3 && (
+              <div className="absolute -bottom-8 text-xs text-slate-500 font-mono">
+                + {contracts.length - 3} more contracts hidden
+              </div>
+            )}
+          </div>
+
+          <div className="text-slate-500 text-xs uppercase tracking-widest mb-6 font-bold">
+            {contracts.length} Promises Active Today
+          </div>
+
+          <button
+            onClick={handleLock}
+            className="group relative w-full max-w-xs bg-slate-900 border-2 border-slate-700 hover:border-emerald-500/50 text-slate-300 hover:text-white py-4 rounded-xl font-bold uppercase tracking-widest transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <div className="absolute inset-0 bg-emerald-500/10 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg blur-md"></div>
+            <span className="relative flex items-center justify-center gap-3">
+              <Fingerprint className="w-6 h-6" /> Confirm Intentions
+            </span>
+          </button>
+        </>
+      ) : (
+        <div className="animate-in zoom-in-50 duration-500 flex flex-col items-center gap-6">
+          <div className="w-24 h-24 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center animate-pulse">
+            <Lock className="w-10 h-10 text-emerald-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-emerald-400 uppercase tracking-widest">
+            Protocol Locked
+          </h2>
+          <p className="text-slate-500 text-sm font-mono">Targets acquired.<br />Good hunting.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Victory Modal ---
 function VictoryModal({ contract, onClose, onFinalize }) {
   useEffect(() => {
@@ -969,6 +1068,7 @@ export default function Laosfactos() {
   const [victoryContract, setVictoryContract] = useState(null); // New Victory State
   const [contractsLoading, setContractsLoading] = useState(true);
   const [dailyBriefing, setDailyBriefing] = useState(null); // Daily Briefing State
+  const [showMorningLockIn, setShowMorningLockIn] = useState(false); // Morning Lock-In State
   const [showMigration, setShowMigration] = useState(false); // Migration UI State
   const [migrationStatus, setMigrationStatus] = useState(null); // Migration Result
 
@@ -1042,6 +1142,23 @@ export default function Laosfactos() {
         const userData = docSnap.data();
         if (userData.dailyBriefing) {
           setDailyBriefing(userData.dailyBriefing);
+        }
+
+        // --- Morning Lock-In Logic ---
+        const now = new Date();
+        const currentHour = now.getHours();
+        const todayStr = now.toISOString().split('T')[0];
+        const lastLockIn = userData.lastLockInDate;
+
+        // Check if morning (6am - 11am), not locked in today, and has active contracts
+        // Note: checking contracts length here is tricky as it's separate state, 
+        // but typically MorningLockIn renders if contracts > 0. 
+        // We'll rely on the render condition below.
+        if (currentHour >= 6 && currentHour < 12 && lastLockIn !== todayStr) {
+          // We set this to true, but the render logic will also check contracts.length
+          setShowMorningLockIn(true);
+        } else {
+          setShowMorningLockIn(false);
         }
       }
     }, (err) => console.error("User Doc Error:", err));
@@ -1258,6 +1375,23 @@ export default function Laosfactos() {
     }
   };
 
+  const handleTestNotification = async () => {
+    if (!user) return;
+    try {
+      if (Notification.permission !== 'granted') {
+        alert("Enable notifications first via the bell icon.");
+        return;
+      }
+      // Optimistic feedback
+      const testFn = httpsCallable(functions, 'testNotification');
+      await testFn();
+      alert("Server sent a test notification. Check your system tray!");
+    } catch (e) {
+      console.error("Test notification failed:", e);
+      alert("Test failed: " + e.message);
+    }
+  };
+
   const handleArchiveBriefing = async (timeOfDay = 'morning') => {
     if (!user) return;
     try {
@@ -1266,6 +1400,19 @@ export default function Laosfactos() {
       });
     } catch (e) {
       console.error("Error archiving briefing:", e);
+    }
+  };
+
+  const handleMorningLockIn = async () => {
+    if (!user) return;
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      await updateDoc(doc(db, 'users', user.uid), {
+        lastLockInDate: todayStr
+      });
+      setShowMorningLockIn(false);
+    } catch (e) {
+      console.error("Lock-In Error:", e);
     }
   };
 
@@ -1306,6 +1453,13 @@ export default function Laosfactos() {
                   title="Recover Data"
                 >
                   <RefreshCcw className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleTestNotification}
+                  className="p-2 rounded-full text-slate-400 hover:bg-slate-900 transition-colors"
+                  title="QA: Test Server Notification"
+                >
+                  <Zap className="w-5 h-5" />
                 </button>
                 <button
                   onClick={handleEnableNotifications}
@@ -1401,6 +1555,13 @@ export default function Laosfactos() {
               />
             )}
 
+            {showMorningLockIn && contracts.filter(c => c.status === 'active').length > 0 && !loading && !contractsLoading && (
+              <MorningLockIn
+                contracts={contracts.filter(c => c.status === 'active')}
+                onLockIn={handleMorningLockIn}
+              />
+            )}
+
             {victoryContract && ( // 5. Render VictoryModal
               <VictoryModal
                 contract={victoryContract}
@@ -1468,6 +1629,7 @@ function Dashboard({ contracts, todayLogs, onCheckIn, onReportViolation, onCompl
     if (aLogged === bLogged) return 0;
     return aLogged ? 1 : -1;
   });
+
 
   if (loading || contractsLoading) {
     return (
@@ -1680,7 +1842,10 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
                 </span>
               )}
             </div>
-            <h3 className="font-semibold text-white leading-tight"><SafeRender content={contract.title} /></h3>
+            <div className="flex items-start gap-3 mt-1">
+              <CommitmentAvatar contract={contract} />
+              <h3 className="font-semibold text-white leading-tight"><SafeRender content={contract.title} /></h3>
+            </div>
           </div>
 
           {/* Actions / Menu */}
@@ -1876,7 +2041,7 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
           )}
         </div>
       </div>
-    </div>
+    </div >
   );
 }
 
@@ -2030,6 +2195,13 @@ function CreateContract({ onCancel, onSubmit }) {
   const [auditResult, setAuditResult] = useState(null);
   const [isAuditing, setIsAuditing] = useState(false);
 
+  // Commitment Photo State
+  const [photo, setPhoto] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const videoRef = useRef(null);
+  const [stream, setStream] = useState(null);
+
   const [formData, setFormData] = useState({
     title: '',
     pillar: '',
@@ -2118,6 +2290,66 @@ function CreateContract({ onCancel, onSubmit }) {
     alert("Witness Link Copied to Clipboard! Send this to your accountability partner.");
   };
 
+  const startCamera = async () => {
+    try {
+      setIsCameraOpen(true);
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 640 } }
+      });
+      setStream(mediaStream);
+      // Wait for ref to be available
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+        }
+      }, 100);
+    } catch (err) {
+      console.error("Camera Error:", err);
+      alert("Could not access camera. Please check permissions.");
+      setIsCameraOpen(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setIsCameraOpen(false);
+  };
+
+  const takePhoto = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      // Square aspect ratio capture
+      const size = Math.min(videoRef.current.videoWidth, videoRef.current.videoHeight);
+      canvas.width = size;
+      canvas.height = size;
+
+      const ctx = canvas.getContext('2d');
+      // Center crop
+      const xOffset = (videoRef.current.videoWidth - size) / 2;
+      const yOffset = (videoRef.current.videoHeight - size) / 2;
+
+      ctx.drawImage(videoRef.current, xOffset, yOffset, size, size, 0, 0, size, size);
+
+      canvas.toBlob((blob) => {
+        setPhoto(blob);
+        setPhotoPreview(URL.createObjectURL(blob));
+        stopCamera();
+      }, 'image/jpeg', 0.8);
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [stream]);
+
   // --- Utils ---
 
   const setDuration = (days) => {
@@ -2165,12 +2397,28 @@ function CreateContract({ onCancel, onSubmit }) {
 
   const handleCommit = async () => {
     setSealingStage('scanning');
+
+    // Upload Photo if exists
+    // Upload Photo if exists
+    // Local Save Logic
+    let photoId = null;
+    if (photo) {
+      try {
+        const id = `photo_${Date.now()}`;
+        await saveImage(id, photo);
+        photoId = id;
+      } catch (err) {
+        console.error("Local Save Error:", err);
+      }
+    }
+
+    const finalData = { ...formData, commitmentPhotoId: photoId };
+
     setTimeout(() => setSealingStage('impact'), 2000);
     setTimeout(() => setSealingStage('done'), 2800);
     setTimeout(() => {
-      onSubmit(formData);
-      clearDraft(); // Clear draft on success
-      // Redirect back to home after success screen
+      onSubmit(finalData);
+      clearDraft();
       setTimeout(() => {
         onCancel();
       }, 2000);
@@ -2599,6 +2847,67 @@ function CreateContract({ onCancel, onSubmit }) {
             </div>
 
             <div className="space-y-4 pt-4 border-t border-slate-800">
+
+              {/* Visual Oath (Photo) */}
+              <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 text-center space-y-3">
+                <div className="text-xs uppercase tracking-widest text-slate-500 font-bold mb-2 flex items-center justify-center gap-2">
+                  <Camera className="w-4 h-4" /> Visual Oath
+                </div>
+
+                {!photoPreview ? (
+                  !isCameraOpen ? (
+                    <button
+                      onClick={startCamera}
+                      className="w-full p-6 border-2 border-dashed border-slate-700 rounded-lg hover:border-indigo-500 hover:bg-slate-800/50 transition-all group flex flex-col items-center justify-center cursor-pointer"
+                    >
+                      <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center mb-3 group-hover:bg-indigo-500/20 group-hover:text-indigo-400 transition-colors">
+                        <Camera className="w-6 h-6 text-slate-400 group-hover:text-indigo-400" />
+                      </div>
+                      <span className="text-sm text-slate-300 font-bold block">Take Commitment Selfie</span>
+                      <p className="text-[10px] text-slate-500 mt-1">Camera permission required</p>
+                    </button>
+                  ) : (
+                    <div className="relative rounded-lg overflow-hidden bg-black aspect-square max-w-[280px] mx-auto border-2 border-indigo-500 shadow-xl shadow-indigo-500/20">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover mirror-mode" // Add typical selfie mirror effect via CSS if needed
+                      />
+                      <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4">
+                        <button
+                          onClick={stopCamera}
+                          className="bg-slate-900/80 p-3 rounded-full text-slate-300 hover:bg-slate-800 hover:text-white backdrop-blur-sm"
+                        >
+                          <XCircle className="w-6 h-6" />
+                        </button>
+                        <button
+                          onClick={takePhoto}
+                          className="bg-white p-4 rounded-full text-indigo-600 hover:scale-110 transition-transform shadow-lg"
+                        >
+                          <div className="w-6 h-6 border-2 border-indigo-600 rounded-full bg-indigo-100"></div>
+                        </button>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="relative inline-block group animate-in zoom-in duration-300">
+                    <img src={photoPreview} alt="Commitment" className="w-32 h-32 rounded-full object-cover border-4 border-slate-800 shadow-xl" />
+                    <button
+                      onClick={() => { setPhoto(null); setPhotoPreview(null); }}
+                      className="absolute -top-1 -right-1 bg-slate-900 text-white rounded-full p-1.5 border border-slate-600 hover:bg-rose-900 hover:border-rose-700 transition-colors"
+                      title="Retake Photo"
+                    >
+                      <RefreshCcw className="w-4 h-4" />
+                    </button>
+                    <div className="mt-3 text-[10px] text-emerald-400 font-bold flex items-center justify-center gap-1 bg-emerald-950/30 py-1 px-3 rounded-full border border-emerald-900/50">
+                      <CheckCircle2 className="w-3 h-3" /> Photo Secured
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <SignaturePad onSign={setIsSigned} />
 
               <p className="text-slate-400 text-xs text-center px-4">
@@ -2662,9 +2971,25 @@ function ViolationFlow({ contract, onCancel, onSubmit }) {
       <div className="w-full max-w-md bg-slate-900 border border-rose-900/50 rounded-lg shadow-2xl p-6 space-y-6 animate-in zoom-in-95 duration-200">
 
         <div className="text-center space-y-2 border-b border-slate-800 pb-4">
-          <div className="mx-auto w-12 h-12 bg-rose-900/20 rounded-full flex items-center justify-center">
-            <AlertTriangle className="w-6 h-6 text-rose-500" />
-          </div>
+          {contract.commitmentPhotoUrl ? (
+            <div className="relative mx-auto w-24 h-24 mb-4">
+              <img
+                src={contract.commitmentPhotoUrl}
+                alt="You promised"
+                className="w-full h-full rounded-full object-cover grayscale contrast-125 border-4 border-rose-900 shadow-lg shadow-rose-900/20"
+              />
+              <div className="absolute inset-0 bg-rose-500/30 rounded-full mix-blend-overlay"></div>
+              <div className="absolute -bottom-2 w-full text-center">
+                <span className="bg-rose-950 text-rose-500 text-[9px] font-bold px-2 py-0.5 rounded border border-rose-900 uppercase tracking-widest">
+                  Betrayed
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="mx-auto w-12 h-12 bg-rose-900/20 rounded-full flex items-center justify-center">
+              <AlertTriangle className="w-6 h-6 text-rose-500" />
+            </div>
+          )}
           <h2 className="text-xl font-bold text-white">Contract Broken</h2>
           <p className="text-rose-400 text-sm font-medium">"<SafeRender content={contract.title} />"</p>
           <p className="text-slate-500 text-xs">This is not a moral failure. It is data.</p>
@@ -2939,5 +3264,40 @@ function JournalModal({ contract, user, onClose }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function CommitmentAvatar({ contract }) {
+  const [imageUrl, setImageUrl] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      // Priority 1: Local IDB (New way)
+      if (contract.commitmentPhotoId) {
+        try {
+          const blob = await getImage(contract.commitmentPhotoId);
+          if (blob && mounted) setImageUrl(URL.createObjectURL(blob));
+        } catch (e) {
+          console.error("Failed to load local image", e);
+        }
+      }
+      // Priority 2: Remote URL (Legacy/Synced way)
+      else if (contract.commitmentPhotoUrl) {
+        if (mounted) setImageUrl(contract.commitmentPhotoUrl);
+      }
+    };
+    load();
+    return () => mounted = false;
+  }, [contract]);
+
+  if (!imageUrl) return null;
+
+  return (
+    <img
+      src={imageUrl}
+      alt="Commitment"
+      className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 shadow-sm flex-shrink-0"
+    />
   );
 }
