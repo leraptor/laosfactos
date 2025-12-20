@@ -61,7 +61,8 @@ import {
   Book,
   Bell,
   RefreshCcw,
-  Camera
+  Camera,
+  Bug
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { saveImage, getImage } from './utils/idb';
@@ -1630,7 +1631,7 @@ export default function Laosfactos() {
                   className="p-2 rounded-full text-slate-400 hover:bg-slate-900 transition-colors"
                   title="QA Tools"
                 >
-                  <Activity className="w-5 h-5" />
+                  <Bug className="w-5 h-5" />
                 </button>
                 <button
                   onClick={handleEnableNotifications}

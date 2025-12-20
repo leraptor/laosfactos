@@ -16,12 +16,7 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
     console.log('[firebase-messaging-sw.js] Received background message ', payload);
-    const notificationTitle = payload.notification.title;
-    const notificationOptions = {
-        body: payload.notification.body,
-        icon: '/vite.svg', // Customize as needed
-        badge: '/vite.svg'
-    };
-
-    self.registration.showNotification(notificationTitle, notificationOptions);
+    // NOTE: FCM SDK automatically displays notifications when `notification` field is present.
+    // Only use this handler for data-only messages or custom processing.
+    // DO NOT call showNotification here for standard notifications - it causes duplicates!
 });
