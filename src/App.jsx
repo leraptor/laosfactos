@@ -2005,13 +2005,23 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
       <div className={"bg-slate-900 border rounded-lg p-5 flex flex-col gap-4 shadow-sm hover:border-slate-700 " + (isAtRisk ? "border-amber-500/50 shadow-amber-500/10" : "border-slate-800")}>
 
         {/* Header */}
-        <div className="flex justify-between items-start gap-4">
+        <div className="flex justify-between items-start gap-3">
           <div className="space-y-1 min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <PillarIcon className={"w-3 h-3 flex-shrink-0 " + pillar.color} />
               <span className={"text-[10px] font-bold uppercase tracking-wider " + pillar.color}>{pillar.label}</span>
+              {/* Weekly Progress Badge - moved inline with pillar */}
+              {isWeekly && (
+                <div className={"flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold " +
+                  (weeklyGoalMet ? "bg-emerald-950/50 text-emerald-400" :
+                    isAtRisk ? "bg-amber-950/50 text-amber-400" :
+                      "bg-indigo-950/50 text-indigo-400")}>
+                  {weeklyCompleted}/{weeklyGoal}
+                  <span className="opacity-70">wk</span>
+                </div>
+              )}
               {daysLeft !== null && !isFuture && (
-                <span className={"text-[10px] font-bold uppercase tracking-wider ml-2 flex items-center gap-1 " + (daysLeft < 3 ? "text-rose-500" : "text-slate-500")}>
+                <span className={"text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 " + (daysLeft < 3 ? "text-rose-500" : "text-slate-500")}>
                   <Clock className="w-3 h-3" />
                   {isExpired ? 'Completed' : (daysLeft + "d left")}
                 </span>
@@ -2019,23 +2029,13 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
             </div>
             <div className="flex items-start gap-3 mt-1">
               <CommitmentAvatar contract={contract} />
-              <h3 className="font-semibold text-white leading-tight"><SafeRender content={contract.title} /></h3>
+              <h3 className="font-semibold text-white leading-tight line-clamp-2"><SafeRender content={contract.title} /></h3>
             </div>
           </div>
 
           {/* Actions / Menu */}
-          <div className="flex items-center gap-2 flex-shrink-0 relative">
-            {/* Weekly Progress Badge */}
-            {isWeekly && (
-              <div className={"flex items-center gap-1 px-2 py-1 rounded border " +
-                (weeklyGoalMet ? "bg-emerald-950/50 border-emerald-800 text-emerald-400" :
-                  isAtRisk ? "bg-amber-950/50 border-amber-800 text-amber-400" :
-                    "bg-indigo-950/50 border-indigo-800 text-indigo-400")}>
-                <span className="text-xs font-mono font-bold">{weeklyCompleted}/{weeklyGoal}</span>
-                <span className="text-[9px] opacity-70">wk</span>
-              </div>
-            )}
-
+          <div className="flex items-center gap-1.5 flex-shrink-0 relative">
+            {/* Streak Badge */}
             <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-slate-800">
               <Flame className="w-3 h-3 text-orange-500" />
               <span className="text-xs font-mono font-bold text-slate-300">{contract.streak}</span>

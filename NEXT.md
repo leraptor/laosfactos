@@ -1,11 +1,13 @@
 ## Last Context
 
-- I'm trying 
+
 
 ## Next Steps
-- Build an AI App to help you execute on Sami Board meeting
+
+Coonnect the Board and Laosfactos Firestore so you're able to push new contracts from the Board to Lasofactos
 
 ## Done
+- Build an AI App to help you execute on Sami Board meeting
 - Add a way for people to resist temptation
 - Allow archiving the daily brief once I read it.
 - Ensure the Dialy Brief showing in the homepage has the logs of yesteday as part of the context.
