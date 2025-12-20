@@ -1304,6 +1304,35 @@ export default function Laosfactos() {
     };
   }, [user]);
 
+  // --- Auto-Sync FCM on Startup ---
+  useEffect(() => {
+    if (!user) return;
+
+    // If notification permission already granted, silently ensure SW is registered and token is synced
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const syncFCM = async () => {
+        try {
+          const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+          console.log('[FCM] Service Worker registered:', reg.scope);
+
+          const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+          const token = await getToken(messaging, {
+            vapidKey,
+            serviceWorkerRegistration: reg
+          });
+
+          if (token) {
+            await setDoc(doc(db, 'users', user.uid), { fcmToken: token }, { merge: true });
+            console.log('[FCM] Token synced on startup');
+          }
+        } catch (e) {
+          console.warn('[FCM] Auto-sync failed:', e);
+        }
+      };
+      syncFCM();
+    }
+  }, [user]);
+
   // --- Actions ---
 
   const handleCreateContract = async (contractData) => {
