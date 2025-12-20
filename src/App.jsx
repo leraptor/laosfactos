@@ -1048,15 +1048,15 @@ function QAToolsPanel({ currentUid, contracts, contractsLoading, onClose, onMigr
 
               {/* Actions */}
               <div className="space-y-2 pt-2 border-t border-slate-800">
-                {notificationPermission !== 'granted' && (
-                  <Button
-                    onClick={onEnableNotifications}
-                    variant="secondary"
-                    className="w-full"
-                  >
-                    🔔 Request Permission & Register Token
-                  </Button>
-                )}
+                <Button
+                  onClick={onEnableNotifications}
+                  variant="secondary"
+                  className="w-full"
+                >
+                  {notificationPermission === 'granted'
+                    ? "↻ Refresh Token & Service Worker"
+                    : "🔔 Request Permission & Register Token"}
+                </Button>
 
                 <Button
                   onClick={handleTestNotificationClick}
@@ -1069,7 +1069,7 @@ function QAToolsPanel({ currentUid, contracts, contractsLoading, onClose, onMigr
 
                 {!fcmToken && notificationPermission === 'granted' && (
                   <div className="text-xs text-amber-400 text-center p-2 bg-amber-950/30 rounded border border-amber-900/50">
-                    ⚠️ Permission granted but no token in Firestore. Click "Request Permission" to re-register.
+                    ⚠️ Permission granted but no token in Firestore. Click "Refresh Token" above.
                   </div>
                 )}
               </div>
@@ -1494,11 +1494,26 @@ export default function Laosfactos() {
       }
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
+        // Explicitly register SW first to ensure it's active and scope is correct
+        let registration;
+        try {
+          registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+          console.log('[App] SW Registered:', registration);
+        } catch (swError) {
+          console.error('[App] SW Registration failed:', swError);
+          // Fallback: try getting token without explicit registration (might use default)
+        }
+
         const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
-        const token = await getToken(messaging, { vapidKey });
+        // Pass registration to getToken to ensure they are linked
+        const token = await getToken(messaging, {
+          vapidKey,
+          serviceWorkerRegistration: registration
+        });
+
         if (token && user) {
           await setDoc(doc(db, 'users', user.uid), { fcmToken: token }, { merge: true });
-          alert("Notifications Enabled! You'll receive your daily briefing tomorrow.");
+          alert("Notifications Enabled & Token Refreshed!");
         } else {
           console.warn("No registration token available. Request permission to generate one.");
         }
