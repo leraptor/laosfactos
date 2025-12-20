@@ -217,7 +217,8 @@ Constraint: 3-4 sentences. No emojis. Calm, reflective, encouraging tone.
 
 // Weekly Rollover: Evaluate weekly contracts and update streaks
 exports.weeklyRollover = onSchedule({
-    schedule: "every monday 00:01"
+    schedule: "1 0 * * 1",
+    timeZone: "Europe/Paris"
 }, async (event) => {
     logger.info("Starting Weekly Rollover...");
 

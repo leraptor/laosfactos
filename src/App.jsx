@@ -186,6 +186,24 @@ async function markSOSOutcome(contractId, temptationId, outcome) {
   }
 }
 
+// AI Backend for violation analysis
+async function callAIBackend(query, systemPrompt) {
+  try {
+    const analyzeViolation = httpsCallable(functions, 'judgeViolation');
+    const result = await analyzeViolation({
+      story: query,
+      reason: 'Analysis',
+      decision: 'recommit',
+      contractTitle: '',
+      contractBehavior: ''
+    });
+    return result.data;
+  } catch (e) {
+    console.error("AI Backend Error:", e);
+    return { verdict: "Unable to analyze.", repair: "Reflect on what happened." };
+  }
+}
+
 // --- Firebase Init ---
 
 // 1. PREVIEW CONFIG (Use this here in the chat)
@@ -2516,14 +2534,14 @@ function CreateContract({ onCancel, onSubmit }) {
     }
   };
 
-  // Cleanup on unmount
+  // Cleanup on unmount - empty dependency array to avoid stale closure issues
   useEffect(() => {
     return () => {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [stream]);
+  }, []);
 
   // --- Utils ---
 
@@ -3126,8 +3144,16 @@ function ViolationFlow({ contract, onCancel, onSubmit }) {
       "- verdict: A short, brutal but fair philosophical truth about why they failed (max 20 words).\n" +
       "- repair: A concrete, immediate repair action (e.g. \"Do 20 pushups now\", \"Write 100x I will not fail\").";
 
-    const result = await callAIBackend("Analyze this slip.", systemPrompt);
-    if (result) setAiVerdict(result);
+    try {
+      const result = await callAIBackend("Analyze this slip.", systemPrompt);
+      if (result) setAiVerdict(result);
+    } catch (e) {
+      console.error("AI Analysis Error:", e);
+      setAiVerdict({
+        verdict: "Analysis unavailable. Reflect honestly on what happened.",
+        repair: "Write down 3 lessons learned."
+      });
+    }
     setIsAiLoading(false);
   };
 
@@ -3146,13 +3172,9 @@ function ViolationFlow({ contract, onCancel, onSubmit }) {
       <div className="w-full max-w-md bg-slate-900 border border-rose-900/50 rounded-lg shadow-2xl p-6 space-y-6 animate-in zoom-in-95 duration-200">
 
         <div className="text-center space-y-2 border-b border-slate-800 pb-4">
-          {contract.commitmentPhotoUrl ? (
+          {(contract.commitmentPhotoUrl || contract.commitmentPhotoId) ? (
             <div className="relative mx-auto w-24 h-24 mb-4">
-              <img
-                src={contract.commitmentPhotoUrl}
-                alt="You promised"
-                className="w-full h-full rounded-full object-cover grayscale contrast-125 border-4 border-rose-900 shadow-lg shadow-rose-900/20"
-              />
+              <ViolationAvatar contract={contract} />
               <div className="absolute inset-0 bg-rose-500/30 rounded-full mix-blend-overlay"></div>
               <div className="absolute -bottom-2 w-full text-center">
                 <span className="bg-rose-950 text-rose-500 text-[9px] font-bold px-2 py-0.5 rounded border border-rose-900 uppercase tracking-widest">
@@ -3447,12 +3469,17 @@ function CommitmentAvatar({ contract }) {
 
   useEffect(() => {
     let mounted = true;
+    let currentUrl = null;
+
     const load = async () => {
       // Priority 1: Local IDB (New way)
       if (contract.commitmentPhotoId) {
         try {
           const blob = await getImage(contract.commitmentPhotoId);
-          if (blob && mounted) setImageUrl(URL.createObjectURL(blob));
+          if (blob && mounted) {
+            currentUrl = URL.createObjectURL(blob);
+            setImageUrl(currentUrl);
+          }
         } catch (e) {
           console.error("Failed to load local image", e);
         }
@@ -3462,8 +3489,13 @@ function CommitmentAvatar({ contract }) {
         if (mounted) setImageUrl(contract.commitmentPhotoUrl);
       }
     };
+
     load();
-    return () => mounted = false;
+
+    return () => {
+      mounted = false;
+      if (currentUrl) URL.revokeObjectURL(currentUrl);
+    };
   }, [contract]);
 
   if (!imageUrl) return null;
@@ -3473,6 +3505,49 @@ function CommitmentAvatar({ contract }) {
       src={imageUrl}
       alt="Commitment"
       className="w-10 h-10 rounded-full object-cover border-2 border-slate-700 shadow-sm flex-shrink-0"
+    />
+  );
+}
+
+// ViolationAvatar for violation flow - handles both local and remote photos
+function ViolationAvatar({ contract }) {
+  const [imageUrl, setImageUrl] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    let currentUrl = null;
+
+    const load = async () => {
+      if (contract.commitmentPhotoId) {
+        try {
+          const blob = await getImage(contract.commitmentPhotoId);
+          if (blob && mounted) {
+            currentUrl = URL.createObjectURL(blob);
+            setImageUrl(currentUrl);
+          }
+        } catch (e) {
+          console.error("Failed to load local image", e);
+        }
+      } else if (contract.commitmentPhotoUrl) {
+        if (mounted) setImageUrl(contract.commitmentPhotoUrl);
+      }
+    };
+
+    load();
+
+    return () => {
+      mounted = false;
+      if (currentUrl) URL.revokeObjectURL(currentUrl);
+    };
+  }, [contract]);
+
+  if (!imageUrl) return null;
+
+  return (
+    <img
+      src={imageUrl}
+      alt="You promised"
+      className="w-full h-full rounded-full object-cover grayscale contrast-125 border-4 border-rose-900 shadow-lg shadow-rose-900/20"
     />
   );
 }
