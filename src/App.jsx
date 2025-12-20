@@ -1628,16 +1628,9 @@ export default function Laosfactos() {
                 <button
                   onClick={() => { setShowMigration(true); setMigrationStatus(null); }}
                   className="p-2 rounded-full text-slate-400 hover:bg-slate-900 transition-colors"
-                  title="Recover Data"
+                  title="QA Tools"
                 >
-                  <RefreshCcw className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={handleTestNotification}
-                  className="p-2 rounded-full text-slate-400 hover:bg-slate-900 transition-colors"
-                  title="QA: Test Server Notification"
-                >
-                  <Zap className="w-5 h-5" />
+                  <Activity className="w-5 h-5" />
                 </button>
                 <button
                   onClick={handleEnableNotifications}
