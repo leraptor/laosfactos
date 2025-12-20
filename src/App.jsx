@@ -877,11 +877,35 @@ function VictoryModal({ contract, onClose, onFinalize }) {
 }
 
 // --- QA Tools Panel ---
-function QAToolsPanel({ currentUid, contracts, contractsLoading, onClose, onMigrate, migrationStatus }) {
+function QAToolsPanel({ currentUid, contracts, contractsLoading, onClose, onMigrate, migrationStatus, onTestNotification, onEnableNotifications, fcmToken }) {
   const [sourceUid, setSourceUid] = useState('skzGn0ryLXTNxPm9FYbixsbWLGT2');
   const [isLoading, setIsLoading] = useState(false);
   const [logs, setLogs] = useState([]);
-  const [activeTab, setActiveTab] = useState('info'); // 'info', 'logs', 'migrate'
+  const [activeTab, setActiveTab] = useState('notify'); // 'info', 'logs', 'migrate', 'notify'
+  const [isTestingNotification, setIsTestingNotification] = useState(false);
+  const [notificationTestResult, setNotificationTestResult] = useState(null);
+  const [swStatus, setSwStatus] = useState('checking...');
+
+  // Check service worker status on mount
+  useEffect(() => {
+    const checkServiceWorker = async () => {
+      if ('serviceWorker' in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+          if (registration) {
+            setSwStatus(`active (scope: ${registration.scope})`);
+          } else {
+            setSwStatus('not registered');
+          }
+        } catch (e) {
+          setSwStatus('error: ' + e.message);
+        }
+      } else {
+        setSwStatus('not supported');
+      }
+    };
+    checkServiceWorker();
+  }, []);
 
   // Capture console logs
   useEffect(() => {
@@ -923,6 +947,27 @@ function QAToolsPanel({ currentUid, contracts, contractsLoading, onClose, onMigr
 
   const refreshPage = () => window.location.reload();
 
+  const handleTestNotificationClick = async () => {
+    setIsTestingNotification(true);
+    setNotificationTestResult(null);
+    try {
+      await onTestNotification();
+      setNotificationTestResult({ success: true, message: 'Notification sent! Check your system tray.' });
+    } catch (e) {
+      setNotificationTestResult({ success: false, message: e.message });
+    }
+    setIsTestingNotification(false);
+  };
+
+  const copyToken = () => {
+    if (fcmToken) {
+      navigator.clipboard?.writeText(fcmToken);
+      alert('FCM Token copied to clipboard!');
+    }
+  };
+
+  const notificationPermission = typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm p-4 flex items-center justify-center overflow-y-auto">
       <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-lg shadow-2xl animate-in zoom-in-95">
@@ -936,20 +981,101 @@ function QAToolsPanel({ currentUid, contracts, contractsLoading, onClose, onMigr
 
         {/* Tabs */}
         <div className="flex border-b border-slate-800">
-          {['info', 'logs', 'migrate'].map(tab => (
+          {['notify', 'info', 'logs', 'migrate'].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`flex-1 py-2 text-xs uppercase tracking-wider font-bold transition-colors ${activeTab === tab ? 'bg-slate-800 text-white' : 'text-slate-500 hover:text-slate-300'
                 }`}
             >
-              {tab === 'info' ? '📊 Status' : tab === 'logs' ? '📝 Logs' : '🔄 Migrate'}
+              {tab === 'notify' ? '🔔 Notify' : tab === 'info' ? '📊 Status' : tab === 'logs' ? '📝 Logs' : '🔄 Migrate'}
             </button>
           ))}
         </div>
 
         {/* Content */}
         <div className="p-4 max-h-[60vh] overflow-y-auto">
+          {activeTab === 'notify' && (
+            <div className="space-y-4">
+              {/* Permission Status */}
+              <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                <div className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-2">Notification Permission</div>
+                <div className={"text-sm font-bold " + (
+                  notificationPermission === 'granted' ? 'text-emerald-400' :
+                    notificationPermission === 'denied' ? 'text-rose-400' : 'text-amber-400'
+                )}>
+                  {notificationPermission === 'granted' ? '✅ Granted' :
+                    notificationPermission === 'denied' ? '❌ Denied (blocked in browser)' :
+                      notificationPermission === 'default' ? '⚠️ Not requested yet' : '🚫 Not supported'}
+                </div>
+              </div>
+
+              {/* FCM Token Status */}
+              <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="text-xs text-slate-500 uppercase tracking-wider font-bold">FCM Token (Firestore)</div>
+                  {fcmToken && (
+                    <button onClick={copyToken} className="text-xs text-indigo-400 hover:text-indigo-300">
+                      📋 Copy
+                    </button>
+                  )}
+                </div>
+                {fcmToken ? (
+                  <div className="text-xs text-emerald-400 font-mono break-all select-all">
+                    {fcmToken.substring(0, 20)}...{fcmToken.substring(fcmToken.length - 10)}
+                  </div>
+                ) : (
+                  <div className="text-sm text-rose-400 font-bold">❌ No token registered</div>
+                )}
+              </div>
+
+              {/* Service Worker Status */}
+              <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
+                <div className="text-xs text-slate-500 uppercase tracking-wider font-bold mb-2">Service Worker</div>
+                <div className={"text-xs font-mono " + (swStatus.includes('active') ? 'text-emerald-400' : 'text-amber-400')}>
+                  {swStatus}
+                </div>
+              </div>
+
+              {/* Test Result */}
+              {notificationTestResult && (
+                <div className={`p-3 rounded-lg border ${notificationTestResult.success
+                  ? 'bg-emerald-950/50 border-emerald-900 text-emerald-400'
+                  : 'bg-rose-950/50 border-rose-900 text-rose-400'}`}>
+                  {notificationTestResult.success ? '✅ ' : '❌ '}{notificationTestResult.message}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                {notificationPermission !== 'granted' && (
+                  <Button
+                    onClick={onEnableNotifications}
+                    variant="secondary"
+                    className="w-full"
+                  >
+                    🔔 Request Permission & Register Token
+                  </Button>
+                )}
+
+                <Button
+                  onClick={handleTestNotificationClick}
+                  disabled={isTestingNotification || !fcmToken}
+                  variant="ai"
+                  className="w-full"
+                >
+                  {isTestingNotification ? "Sending..." : "📤 Send Test Notification (Server FCM)"}
+                </Button>
+
+                {!fcmToken && notificationPermission === 'granted' && (
+                  <div className="text-xs text-amber-400 text-center p-2 bg-amber-950/30 rounded border border-amber-900/50">
+                    ⚠️ Permission granted but no token in Firestore. Click "Request Permission" to re-register.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'info' && (
             <div className="space-y-4">
               <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3">
@@ -1071,6 +1197,7 @@ export default function Laosfactos() {
   const [showMorningLockIn, setShowMorningLockIn] = useState(false); // Morning Lock-In State
   const [showMigration, setShowMigration] = useState(false); // Migration UI State
   const [migrationStatus, setMigrationStatus] = useState(null); // Migration Result
+  const [fcmToken, setFcmToken] = useState(null); // FCM Token for debugging
 
   // --- Auth & Data Loading ---
   useEffect(() => {
@@ -1142,6 +1269,13 @@ export default function Laosfactos() {
         const userData = docSnap.data();
         if (userData.dailyBriefing) {
           setDailyBriefing(userData.dailyBriefing);
+        }
+
+        // Capture FCM token for debugging
+        if (userData.fcmToken) {
+          setFcmToken(userData.fcmToken);
+        } else {
+          setFcmToken(null);
         }
 
         // --- Morning Lock-In Logic ---
@@ -1578,6 +1712,9 @@ export default function Laosfactos() {
                 onClose={() => setShowMigration(false)}
                 onMigrate={handleMigration}
                 migrationStatus={migrationStatus}
+                onTestNotification={handleTestNotification}
+                onEnableNotifications={handleEnableNotifications}
+                fcmToken={fcmToken}
               />
             )}
 
