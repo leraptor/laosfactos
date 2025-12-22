@@ -2047,7 +2047,7 @@ function ContractCard({ contract, todayLog, onCheckIn, onReportViolation, onCons
             </div>
             <div className="flex items-start gap-3 mt-1">
               <CommitmentAvatar contract={contract} />
-              <h3 className="font-semibold text-white leading-tight line-clamp-2"><SafeRender content={contract.title} /></h3>
+              <h3 className="font-semibold text-white leading-tight flex-1"><SafeRender content={contract.title} /></h3>
             </div>
           </div>
 
